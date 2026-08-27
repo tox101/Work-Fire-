@@ -184,100 +184,103 @@ export default function Today() {
         </div>
       </header>
 
-      {/* 2. NOW / Continue & 일정 대시보드 */}
-      <section className="grid gap-3 lg:grid-cols-[1.1fr_.9fr]">
-        <div className="rounded-xl border-2 border-emerald-600 bg-emerald-700 p-4 text-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-emerald-500/60 pb-2">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-100">
-              {nowTask ? "● NOW / 지금 진행 중" : "▶ CONTINUE / 이어서 하기"}
-            </span>
-            <Clock3 className="h-4 w-4 text-emerald-100" />
-          </div>
+      {/* 2. 🌟 3단 비주얼 대시보드 (40% NOW : 40% TODAY 타임라인 : 20% 주간 흐름) */}
+      <section className="grid gap-3 lg:grid-cols-[2fr_2fr_1fr]">
+        {/* 컬럼 1 (40%): NOW / Continue 실행 카드 */}
+        <div className="rounded-xl border-2 border-emerald-600 bg-emerald-700 p-4 text-white shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between border-b border-emerald-500/60 pb-2">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-100">
+                {nowTask ? "● NOW / 지금 진행 중" : "▶ CONTINUE / 이어서 하기"}
+              </span>
+              <Clock3 className="h-4 w-4 text-emerald-100" />
+            </div>
 
-          {linkedTask ? (
-            <div className="mt-2.5">
-              <h2 className="text-2xl font-black text-white leading-tight">{linkedTask.title}</h2>
-              <p className="mt-1 text-xs font-bold text-emerald-100">
-                {linkedProject?.title ?? "독립 작업"}{linkedStage ? ` › ${linkedStage.title}` : ""}
-              </p>
-              {continueItem?.lastRecord && (
-                <blockquote className="mt-2 border-l-2 border-emerald-200 pl-2.5 text-xs font-medium leading-normal text-emerald-50">
-                  “{continueItem.lastRecord.content}”
-                </blockquote>
-              )}
-              <div className="mt-2.5 rounded-lg bg-emerald-800/80 p-2 border border-emerald-600">
-                <span className="text-[11px] font-extrabold uppercase text-emerald-200 block">세부 작업 (Action)</span>
-                <p className="mt-0.5 text-xs font-bold text-white">{linkedTask.nextAction || "세부 작업 내용이 없습니다."}</p>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {linkedTask.status !== "in_progress" && (
+            {linkedTask ? (
+              <div className="mt-2.5">
+                <h2 className="text-2xl font-black text-white leading-tight">{linkedTask.title}</h2>
+                <p className="mt-1 text-xs font-bold text-emerald-100">
+                  {linkedProject?.title ?? "독립 작업"}{linkedStage ? ` › ${linkedStage.title}` : ""}
+                </p>
+                {continueItem?.lastRecord && (
+                  <blockquote className="mt-2 border-l-2 border-emerald-200 pl-2.5 text-xs font-medium leading-normal text-emerald-50">
+                    “{continueItem.lastRecord.content}”
+                  </blockquote>
+                )}
+                <div className="mt-2.5 rounded-lg bg-emerald-800/80 p-2 border border-emerald-600">
+                  <span className="text-[11px] font-extrabold uppercase text-emerald-200 block">세부 작업 (Action)</span>
+                  <p className="mt-0.5 text-xs font-bold text-white">{linkedTask.nextAction || "세부 작업 내용이 없습니다."}</p>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {linkedTask.status !== "in_progress" && (
+                    <button
+                      onClick={() =>
+                        setTaskStatus.mutate({
+                          id: linkedTask.id,
+                          expectedRevision: linkedTask.revision,
+                          status: "in_progress",
+                        })
+                      }
+                      className="pressable flex h-9 items-center gap-1.5 rounded-lg bg-white px-3.5 text-xs font-black text-emerald-800 shadow-xs"
+                    >
+                      <Play className="h-3.5 w-3.5 fill-current" /> 시작
+                    </button>
+                  )}
+                  <button
+                    onClick={() =>
+                      setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "done" })
+                    }
+                    className="pressable flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-800 px-3.5 text-xs font-black text-white hover:bg-emerald-900"
+                  >
+                    <Check className="h-4 w-4" /> 완료
+                  </button>
                   <button
                     onClick={() =>
                       setTaskStatus.mutate({
                         id: linkedTask.id,
                         expectedRevision: linkedTask.revision,
+                        status: "on_hold",
+                      })
+                    }
+                    className="pressable flex h-9 items-center gap-1 px-2.5 text-xs font-bold text-emerald-100 hover:text-white"
+                  >
+                    <Pause className="h-4 w-4" /> 보류
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="py-2">
+                {suggestedTask ? (
+                  <SuggestedTaskSummary
+                    task={suggestedTask}
+                    projectTitle={suggestedProject?.title ?? "연결된 Project 없음"}
+                    onStart={() =>
+                      setTaskStatus.mutate({
+                        id: suggestedTask.id,
+                        expectedRevision: suggestedTask.revision,
                         status: "in_progress",
                       })
                     }
-                    className="pressable flex h-9 items-center gap-1.5 rounded-lg bg-white px-3.5 text-xs font-black text-emerald-800 shadow-xs"
-                  >
-                    <Play className="h-3.5 w-3.5 fill-current" /> 시작
-                  </button>
+                  />
+                ) : (
+                  <>
+                    <h2 className="text-xl font-black text-white">시작할 작업이 없습니다.</h2>
+                    <p className="mt-1 text-xs font-semibold text-emerald-100">프로젝트를 만들거나 오늘의 일정을 추가하세요.</p>
+                    <button
+                      onClick={() => setLocation("/projects")}
+                      className="pressable mt-3 rounded-lg bg-white px-3.5 py-2 text-xs font-black text-emerald-800 shadow"
+                    >
+                      Project 만들기
+                    </button>
+                  </>
                 )}
-                <button
-                  onClick={() =>
-                    setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "done" })
-                  }
-                  className="pressable flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-800 px-3.5 text-xs font-black text-white hover:bg-emerald-900"
-                >
-                  <Check className="h-4 w-4" /> 완료
-                </button>
-                <button
-                  onClick={() =>
-                    setTaskStatus.mutate({
-                      id: linkedTask.id,
-                      expectedRevision: linkedTask.revision,
-                      status: "on_hold",
-                    })
-                  }
-                  className="pressable flex h-9 items-center gap-1 px-2.5 text-xs font-bold text-emerald-100 hover:text-white"
-                >
-                  <Pause className="h-4 w-4" /> 보류
-                </button>
+                {latestRecord && <RecentCaptureSummary content={latestRecord.content} />}
               </div>
-            </div>
-          ) : (
-            <div className="py-2">
-              {suggestedTask ? (
-                <SuggestedTaskSummary
-                  task={suggestedTask}
-                  projectTitle={suggestedProject?.title ?? "연결된 Project 없음"}
-                  onStart={() =>
-                    setTaskStatus.mutate({
-                      id: suggestedTask.id,
-                      expectedRevision: suggestedTask.revision,
-                      status: "in_progress",
-                    })
-                  }
-                />
-              ) : (
-                <>
-                  <h2 className="text-xl font-black text-white">시작할 작업이 없습니다.</h2>
-                  <p className="mt-1 text-xs font-semibold text-emerald-100">프로젝트를 만들거나 오늘의 일정을 추가하세요.</p>
-                  <button
-                    onClick={() => setLocation("/projects")}
-                    className="pressable mt-3 rounded-lg bg-white px-3.5 py-2 text-xs font-black text-emerald-800 shadow"
-                  >
-                    Project 만들기
-                  </button>
-                </>
-              )}
-              {latestRecord && <RecentCaptureSummary content={latestRecord.content} />}
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        {/* 오늘 일정 컴팩트 목록 (프로젝트 / 일상 / 긴급 분리) */}
+        {/* 컬럼 2 (40%): TODAY 일정 타임라인 */}
         <aside className="rounded-xl border-2 border-slate-200 bg-white p-3 sm:p-4 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
@@ -397,23 +400,23 @@ export default function Today() {
             </div>
           </div>
         </aside>
-      </section>
 
-      {/* 3. 하단 카드 섹션들 */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <PinnedRecordSummary
-          items={pinnedRecords.data ?? []}
-          loading={pinnedRecords.isLoading}
-          onViewRecords={() => setLocation("/records")}
-        />
-        <WeeklySummary
-          completedTaskCount={weeklySummary.data?.completedTaskCount ?? 0}
-          recordCount={weeklySummary.data?.recordCount ?? 0}
-          completedScheduleCount={weeklySummary.data?.completedScheduleCount ?? 0}
-          change={weeklySummary.data?.change}
-          loading={weeklySummary.isLoading}
-        />
-      </div>
+        {/* 컬럼 3 (20%): 주간 흐름 & 핀 기록 */}
+        <div className="flex flex-col gap-2.5">
+          <WeeklySummary
+            completedTaskCount={weeklySummary.data?.completedTaskCount ?? 0}
+            recordCount={weeklySummary.data?.recordCount ?? 0}
+            completedScheduleCount={weeklySummary.data?.completedScheduleCount ?? 0}
+            change={weeklySummary.data?.change}
+            loading={weeklySummary.isLoading}
+          />
+          <PinnedRecordSummary
+            items={pinnedRecords.data ?? []}
+            loading={pinnedRecords.isLoading}
+            onViewRecords={() => setLocation("/records")}
+          />
+        </div>
+      </section>
 
       {savedSearches.data?.length ? (
         <section aria-label="Today 저장 Record 검색" className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3">
