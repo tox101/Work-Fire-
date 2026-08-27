@@ -1,74 +1,122 @@
-import { CapturePanel } from "@/components/CapturePanel";
-import { PinnedRecordSummary, RecentCaptureSummary, SuggestedTaskSummary, WeeklySummary } from "@/components/WorkspaceInsights";
-import { ConflictResolutionNotice } from "@/components/ConflictResolutionNotice";
-import { trpc } from "@/lib/trpc";
-import { getSuggestedTask } from "@/lib/workspaceSummary";
-import { Check, Circle, Clock3, Pause, Pencil, Play, Plus, SquarePen } from "lucide-react";
+import {
+  Calendar,
+  Check,
+  Circle,
+  Clock,
+  Clock3,
+  Coffee,
+  Flame,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Sparkles,
+  SquarePen,
+  Trash2,
+  Wrench,
+  X,
+  Zap,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { toast } from "sonner";
+import { CapturePanel } from "@/components/CapturePanel";
+import { ConflictResolutionNotice } from "@/components/ConflictResolutionNotice";
+import { PinnedRecordSummary, RecentCaptureSummary, SuggestedTaskSummary, WeeklySummary } from "@/components/WorkspaceInsights";
+import { getContinueItem, getNowItem, getSuggestedTask, getTodayProgress, groupRecordsByDay } from "@/lib/workspaceSummary";
+import { trpc } from "@/lib/trpc";
 
-function getDayWindow() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
-  return { start, end };
-}
-
-function getWeekWindow() {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-  const end = new Date(start);
-  end.setDate(end.getDate() + 7);
-  return { start, end };
-}
+type ScheduleCategory = "project" | "daily" | "urgent";
 
 function dateHeading() {
-  return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "long" }).format(new Date());
+  return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(new Date());
+}
+
+function formatMinutes(minutes: number) {
+  if (minutes < 60) return `${minutes}분`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}시간 ${remainder}분` : `${hours}시간`;
+}
+
+function parseScheduleNotes(notes: string | null | undefined): { category: ScheduleCategory; duration: number; breakTime: number } {
+  if (!notes) return { category: "project", duration: 60, breakTime: 0 };
+  try {
+    const data = JSON.parse(notes);
+    return {
+      category: data.category ?? "project",
+      duration: data.duration ?? 60,
+      breakTime: data.breakTime ?? 0,
+    };
+  } catch {
+    return { category: "project", duration: 60, breakTime: 0 };
+  }
 }
 
 export default function Today() {
-  const [dayWindow] = useState(getDayWindow);
-  const [weekWindow] = useState(getWeekWindow);
-  const [, setLocation] = useLocation();
-  const utils = trpc.useUtils();
-  const overview = trpc.workspace.overview.useQuery(dayWindow);
-  const continueData = trpc.workspace.continue.useQuery();
+  const [day] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+  const window = useMemo(() => {
+    const start = new Date(day);
+    const end = new Date(day);
+    end.setDate(end.getDate() + 1);
+    return { start, end };
+  }, [day]);
+
+  const overview = trpc.workspace.overview.useQuery(window);
+  const continueContext = trpc.workspace.continue.useQuery();
   const pinnedRecords = trpc.workspace.pinnedRecordSummaries.useQuery();
   const savedSearches = trpc.workspace.savedRecordSearches.useQuery();
-  const weeklySummary = trpc.workspace.weeklySummary.useQuery(weekWindow);
-  const handleMutationError = (error: { message: string }) => { toast.error(error.message); void utils.workspace.overview.invalidate(); void utils.workspace.continue.invalidate(); };
-  const setTaskStatus = trpc.workspace.setTaskStatus.useMutation({ onSuccess: () => { utils.workspace.overview.invalidate(); utils.workspace.continue.invalidate(); }, onError: handleMutationError });
-  const setScheduleStatus = trpc.workspace.setScheduleStatus.useMutation({ onSuccess: () => utils.workspace.overview.invalidate(), onError: handleMutationError });
+  const weeklySummary = trpc.workspace.weeklySummary.useQuery();
+  const utils = trpc.useUtils();
+  const [, setLocation] = useLocation();
+
   const [showCapture, setShowCapture] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<any | null>(null);
   const [scheduleConflict, setScheduleConflict] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState<{ id: number; revision: number; title: string; taskId: number | null; plannedStartAt: Date | null } | null>(null);
-  const closeSchedule = () => { setShowSchedule(false); setScheduleConflict(false); setEditingSchedule(null); };
-  const createSchedule = trpc.workspace.createSchedule.useMutation({ onSuccess: () => { closeSchedule(); utils.workspace.overview.invalidate(); } });
-  const updateSchedule = trpc.workspace.updateSchedule.useMutation({ onSuccess: () => { closeSchedule(); utils.workspace.overview.invalidate(); }, onError: error => { if (error.data?.code === "CONFLICT") setScheduleConflict(true); else toast.error(error.message); void utils.workspace.overview.invalidate(); } });
+
+  const invalidate = () => {
+    void utils.workspace.overview.invalidate();
+    void utils.workspace.continue.invalidate();
+    void utils.workspace.weeklySummary.invalidate();
+  };
+
+  const setTaskStatus = trpc.workspace.setTaskStatus.useMutation({ onSuccess: invalidate });
+  const createSchedule = trpc.workspace.createSchedule.useMutation({
+    onSuccess: () => {
+      setShowSchedule(false);
+      invalidate();
+    },
+  });
+  const updateSchedule = trpc.workspace.updateSchedule.useMutation({
+    onSuccess: () => {
+      setShowSchedule(false);
+      setEditingSchedule(null);
+      invalidate();
+    },
+  });
+  const setScheduleStatus = trpc.workspace.setScheduleStatus.useMutation({ onSuccess: invalidate });
 
   const data = overview.data;
-  const projectById = useMemo(() => new Map(data?.projects.map(project => [project.id, project]) ?? []), [data?.projects]);
-  const stageById = useMemo(() => new Map(data?.stages.map(stage => [stage.id, stage]) ?? []), [data?.stages]);
-  const taskById = useMemo(() => new Map(data?.tasks.map(task => [task.id, task]) ?? []), [data?.tasks]);
-  const now = data?.schedules.find(item => item.status === "in_progress") ?? null;
-  const continueItem = continueData.data;
-  const suggestedTask = useMemo(() => getSuggestedTask(data?.tasks ?? []), [data?.tasks]);
-  const latestRecord = data?.recentRecords[0] ?? null;
+  const projectById = useMemo(() => new Map(data?.projects.map(p => [p.id, p]) ?? []), [data?.projects]);
+  const stageById = useMemo(() => new Map(data?.stages.map(s => [s.id, s]) ?? []), [data?.stages]);
+  const taskById = useMemo(() => new Map(data?.tasks.map(t => [t.id, t]) ?? []), [data?.tasks]);
+  const recordsByDay = useMemo(() => groupRecordsByDay(data?.records ?? []), [data?.records]);
+  const latestRecord = recordsByDay.find(group => group.records.length > 0)?.records[0];
 
-  if (overview.isLoading || continueData.isLoading) return <TodaySkeleton />;
-  if (overview.isError) return <section className="block-shadow border border-neutral-950 bg-white p-8"><p className="industrial-label text-neutral-500">System status</p><h1 className="industrial-title mt-3 text-4xl">데이터를 불러오지 못했습니다.</h1><button onClick={() => overview.refetch()} className="mt-6 bg-neutral-950 px-4 py-3 text-sm font-bold text-white">다시 시도</button></section>;
-
+  const now = data?.tasks ? getNowItem(data.tasks) : null;
+  const continueItem = continueContext.data;
+  const suggestedTask = data?.tasks ? getSuggestedTask(data.tasks) : null;
   const linkedTask = now?.taskId ? taskById.get(now.taskId) : continueItem?.task;
   const linkedProject = linkedTask?.projectId ? projectById.get(linkedTask.projectId) : continueItem?.project;
   const linkedStage = linkedTask?.stageId ? stageById.get(linkedTask.stageId) : continueItem?.stage;
   const suggestedProject = suggestedTask?.projectId ? projectById.get(suggestedTask.projectId) : null;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 max-w-6xl mx-auto pb-16">
       {/* 1. 컴팩트 헤더 */}
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
         <div className="flex items-center gap-3">
@@ -80,7 +128,7 @@ export default function Today() {
         <p className="text-xs font-semibold text-slate-600 hidden sm:block">작은 일이라도 끝냅니다. 복잡한 맥락은 시스템이 기억합니다.</p>
       </header>
 
-      {/* 2. NOW / Continue & 일정 대시보드 (초슬림 & 꽉 찬 구성) */}
+      {/* 2. NOW / Continue & 일정 대시보드 */}
       <section className="grid gap-3 lg:grid-cols-[1.1fr_.9fr]">
         <div className="rounded-xl border-2 border-emerald-600 bg-emerald-700 p-4 text-white shadow-sm">
           <div className="flex items-center justify-between border-b border-emerald-500/60 pb-2">
@@ -108,20 +156,34 @@ export default function Today() {
               <div className="mt-3 flex flex-wrap gap-2">
                 {linkedTask.status !== "in_progress" && (
                   <button
-                    onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "in_progress" })}
+                    onClick={() =>
+                      setTaskStatus.mutate({
+                        id: linkedTask.id,
+                        expectedRevision: linkedTask.revision,
+                        status: "in_progress",
+                      })
+                    }
                     className="pressable flex h-9 items-center gap-1.5 rounded-lg bg-white px-3.5 text-xs font-black text-emerald-800 shadow-xs"
                   >
                     <Play className="h-3.5 w-3.5 fill-current" /> 시작
                   </button>
                 )}
                 <button
-                  onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "done" })}
+                  onClick={() =>
+                    setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "done" })
+                  }
                   className="pressable flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-800 px-3.5 text-xs font-black text-white hover:bg-emerald-900"
                 >
                   <Check className="h-4 w-4" /> 완료
                 </button>
                 <button
-                  onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "on_hold" })}
+                  onClick={() =>
+                    setTaskStatus.mutate({
+                      id: linkedTask.id,
+                      expectedRevision: linkedTask.revision,
+                      status: "on_hold",
+                    })
+                  }
                   className="pressable flex h-9 items-center gap-1 px-2.5 text-xs font-bold text-emerald-100 hover:text-white"
                 >
                   <Pause className="h-4 w-4" /> 보류
@@ -134,7 +196,13 @@ export default function Today() {
                 <SuggestedTaskSummary
                   task={suggestedTask}
                   projectTitle={suggestedProject?.title ?? "연결된 Project 없음"}
-                  onStart={() => setTaskStatus.mutate({ id: suggestedTask.id, expectedRevision: suggestedTask.revision, status: "in_progress" })}
+                  onStart={() =>
+                    setTaskStatus.mutate({
+                      id: suggestedTask.id,
+                      expectedRevision: suggestedTask.revision,
+                      status: "in_progress",
+                    })
+                  }
                 />
               ) : (
                 <>
@@ -153,71 +221,167 @@ export default function Today() {
           )}
         </div>
 
-        {/* 오늘 일정 컴팩트 목록 */}
+        {/* 오늘 일정 컴팩트 목록 (프로젝트 / 일상 / 긴급 분리) */}
         <aside className="rounded-xl border-2 border-slate-200 bg-white p-3 sm:p-4 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-800">Today 일정 타임라인</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-800">Today 일정 타임라인</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.2 text-[10px] font-bold text-slate-600">
+                  {data?.schedules.length ?? 0}건
+                </span>
+              </div>
               <button
-                onClick={() => { setEditingSchedule(null); setScheduleConflict(false); setShowSchedule(true); }}
+                onClick={() => {
+                  setEditingSchedule(null);
+                  setScheduleConflict(false);
+                  setShowSchedule(true);
+                }}
                 className="flex items-center gap-1 text-xs font-extrabold text-emerald-700 hover:underline"
               >
                 <Plus className="h-3.5 w-3.5" /> 일정 추가
               </button>
             </div>
+
             <div className="mt-2 space-y-1">
-              {data?.schedules.length ? data.schedules.map(item => {
-                const task = item.taskId ? taskById.get(item.taskId) : undefined;
-                const project = task?.projectId ? projectById.get(task.projectId) : undefined;
-                const done = item.status === "completed";
-                const isActive = item.status === "in_progress";
-                const time = item.plannedStartAt ? new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(item.plannedStartAt) : "미정";
-                return (
-                  <article key={item.id} className={`group flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 transition-colors ${isActive ? "bg-emerald-600 text-white shadow-2xs" : "hover:bg-slate-50 bg-slate-50/60 border border-slate-100"}`}>
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className={`text-xs font-bold font-mono shrink-0 ${isActive ? "text-white" : "text-slate-600"}`}>{time}</span>
-                      <span className={`text-xs font-bold truncate ${done ? "line-through opacity-45" : isActive ? "text-white" : "text-slate-900"}`}>{item.title}</span>
-                      {task && (
-                        <span className={`text-[10px] font-semibold truncate hidden sm:inline ${isActive ? "text-emerald-100" : "text-slate-500"}`}>
-                          ({project?.title ?? "P"} › {task.title})
+              {data?.schedules.length ? (
+                data.schedules.map(item => {
+                  const task = item.taskId ? taskById.get(item.taskId) : undefined;
+                  const project = task?.projectId ? projectById.get(task.projectId) : undefined;
+                  const done = item.status === "completed";
+                  const isActive = item.status === "in_progress";
+                  const parsed = parseScheduleNotes(item.notes);
+                  const time = item.plannedStartAt
+                    ? new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(
+                        new Date(item.plannedStartAt)
+                      )
+                    : "미정";
+
+                  // 카테고리 뱃지 설정
+                  const isDaily = parsed.category === "daily" || (!item.taskId && !parsed.category);
+                  const isUrgent = parsed.category === "urgent";
+
+                  return (
+                    <article
+                      key={item.id}
+                      className={`group flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 transition-colors ${
+                        isActive
+                          ? "bg-emerald-600 text-white shadow-2xs"
+                          : "hover:bg-slate-50 bg-slate-50/70 border border-slate-100"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span className={`text-xs font-bold font-mono shrink-0 ${isActive ? "text-white" : "text-slate-600"}`}>
+                          {time}
                         </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {done ? (
-                        <Check className="h-4 w-4 text-emerald-600" />
-                      ) : (
-                        <button aria-label={`${item.title} ${isActive ? "완료" : "시작"}`} onClick={() => setScheduleStatus.mutate({ id: item.id, expectedRevision: item.revision, status: isActive ? "completed" : "in_progress" })} className="p-0.5 hover:bg-white hover:text-slate-900 rounded">
-                          {isActive ? <Check className="h-4 w-4 text-white" /> : <Circle className="h-4 w-4 text-slate-400 hover:text-emerald-600" />}
+
+                        {/* 카테고리 태그 */}
+                        {isUrgent ? (
+                          <span className="rounded bg-rose-100 text-rose-800 border border-rose-200 px-1 py-0.2 text-[10px] font-black shrink-0">
+                            🚨 긴급
+                          </span>
+                        ) : isDaily ? (
+                          <span className="rounded bg-sky-100 text-sky-800 border border-sky-200 px-1 py-0.2 text-[10px] font-black shrink-0">
+                            ☕ 일상
+                          </span>
+                        ) : (
+                          <span className="rounded bg-emerald-100 text-emerald-800 border border-emerald-200 px-1 py-0.2 text-[10px] font-black shrink-0">
+                            🛠️ Pjt
+                          </span>
+                        )}
+
+                        <span
+                          className={`text-xs font-bold truncate ${
+                            done ? "line-through opacity-45" : isActive ? "text-white" : "text-slate-900"
+                          }`}
+                        >
+                          {item.title}
+                        </span>
+
+                        {/* 소요시간 및 휴식 표시 */}
+                        <span className={`text-[10px] font-mono shrink-0 hidden sm:inline ${isActive ? "text-emerald-100" : "text-slate-500"}`}>
+                          ({parsed.duration}분{parsed.breakTime > 0 ? `·휴${parsed.breakTime}분` : ""})
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {done ? (
+                          <Check className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <button
+                            aria-label={`${item.title} ${isActive ? "완료" : "시작"}`}
+                            onClick={() =>
+                              setScheduleStatus.mutate({
+                                id: item.id,
+                                expectedRevision: item.revision,
+                                status: isActive ? "completed" : "in_progress",
+                              })
+                            }
+                            className="p-0.5 hover:bg-white hover:text-slate-900 rounded"
+                          >
+                            {isActive ? (
+                              <Check className="h-4 w-4 text-white" />
+                            ) : (
+                              <Circle className="h-4 w-4 text-slate-400 hover:text-emerald-600" />
+                            )}
+                          </button>
+                        )}
+                        <button
+                          aria-label={`${item.title} 수정`}
+                          onClick={() => {
+                            setEditingSchedule(item);
+                            setShowSchedule(true);
+                          }}
+                          className={`p-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${
+                            isActive ? "text-white" : "text-slate-400 hover:text-slate-800"
+                          }`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
                         </button>
-                      )}
-                      <button aria-label={`${item.title} 수정`} onClick={() => { setEditingSchedule({ id: item.id, revision: item.revision, title: item.title, taskId: item.taskId, plannedStartAt: item.plannedStartAt }); setShowSchedule(true); }} className={`p-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? "text-white" : "text-slate-400 hover:text-slate-800"}`}>
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </article>
-                );
-              }) : <EmptySchedule onAdd={() => setShowSchedule(true)} />}
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <EmptySchedule onAdd={() => setShowSchedule(true)} />
+              )}
             </div>
           </div>
         </aside>
       </section>
 
-      {/* 3. 하단 카드 섹션들 (패딩 축소 & 가로 배치) */}
+      {/* 3. 하단 카드 섹션들 */}
       <div className="grid gap-3 sm:grid-cols-2">
-        <PinnedRecordSummary items={pinnedRecords.data ?? []} loading={pinnedRecords.isLoading} onViewRecords={() => setLocation("/records")} />
-        <WeeklySummary completedTaskCount={weeklySummary.data?.completedTaskCount ?? 0} recordCount={weeklySummary.data?.recordCount ?? 0} completedScheduleCount={weeklySummary.data?.completedScheduleCount ?? 0} change={weeklySummary.data?.change} loading={weeklySummary.isLoading} />
+        <PinnedRecordSummary
+          items={pinnedRecords.data ?? []}
+          loading={pinnedRecords.isLoading}
+          onViewRecords={() => setLocation("/records")}
+        />
+        <WeeklySummary
+          completedTaskCount={weeklySummary.data?.completedTaskCount ?? 0}
+          recordCount={weeklySummary.data?.recordCount ?? 0}
+          completedScheduleCount={weeklySummary.data?.completedScheduleCount ?? 0}
+          change={weeklySummary.data?.change}
+          loading={weeklySummary.isLoading}
+        />
       </div>
 
       {savedSearches.data?.length ? (
         <section aria-label="Today 저장 Record 검색" className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-black text-slate-800">저장된 검색 바로가기</span>
-            <button type="button" onClick={() => setLocation("/records")} className="text-xs font-bold text-emerald-800 hover:underline">전체 보기 →</button>
+            <button type="button" onClick={() => setLocation("/records")} className="text-xs font-bold text-emerald-800 hover:underline">
+              전체 보기 →
+            </button>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {savedSearches.data.slice(0, 6).map(search => (
-              <button type="button" key={search.id} onClick={() => setLocation(`/records?savedSearch=${search.id}`)} className="pressable rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-800 hover:bg-emerald-50 hover:text-emerald-900">
+              <button
+                type="button"
+                key={search.id}
+                onClick={() => setLocation(`/records?savedSearch=${search.id}`)}
+                className="pressable rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-800 hover:bg-emerald-50 hover:text-emerald-900"
+              >
                 {search.name}
               </button>
             ))}
@@ -240,37 +404,259 @@ export default function Today() {
         )}
       </section>
 
-      {showSchedule && <ScheduleComposer tasks={data?.tasks ?? []} schedule={editingSchedule} latestSchedule={editingSchedule ? data?.schedules.find(item => item.id === editingSchedule.id) ?? null : null} conflict={scheduleConflict} onCancel={closeSchedule} onSubmit={({ title, taskId, plannedStartAt, expectedRevision }) => {
-        if (editingSchedule) updateSchedule.mutate({ id: editingSchedule.id, expectedRevision: expectedRevision ?? editingSchedule.revision, title, taskId, plannedStartAt });
-        else createSchedule.mutate({ title, taskId, plannedStartAt });
-      }} busy={createSchedule.isPending || updateSchedule.isPending} />}
+      {/* 5. 똑똑한 스마트 일정 생성기 (시작 + 예상 - 휴식시간 계산 + 카테고리 분리) */}
+      {showSchedule && (
+        <SmartScheduleComposer
+          tasks={data?.tasks ?? []}
+          schedule={editingSchedule}
+          latestSchedule={editingSchedule ? data?.schedules.find(item => item.id === editingSchedule.id) ?? null : null}
+          conflict={scheduleConflict}
+          onCancel={() => {
+            setShowSchedule(false);
+            setEditingSchedule(null);
+          }}
+          onSubmit={({ title, taskId, plannedStartAt, plannedEndAt, notes, expectedRevision }) => {
+            if (editingSchedule)
+              updateSchedule.mutate({
+                id: editingSchedule.id,
+                expectedRevision: expectedRevision ?? editingSchedule.revision,
+                title,
+                taskId,
+                plannedStartAt,
+                plannedEndAt,
+                notes,
+              });
+            else createSchedule.mutate({ title, taskId, plannedStartAt, plannedEndAt, notes });
+          }}
+          busy={createSchedule.isPending || updateSchedule.isPending}
+        />
+      )}
     </div>
   );
 }
 
-function EmptySchedule({ onAdd }: { onAdd: () => void }) { return <div className="rounded-xl border border-dashed border-emerald-200 bg-white/60 p-3"><p className="font-bold text-violet-900">오늘 등록된 일정이 없습니다.</p><p className="mt-1 text-sm leading-5 text-violet-500">작업과 연결하거나 독립 개인 일정으로 등록할 수 있습니다.</p><button onClick={onAdd} className="mt-3 border-b border-emerald-500 text-sm font-bold text-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">일정 추가</button></div>; }
-function TodaySkeleton() { return <div className="animate-pulse space-y-6"><div className="h-32 w-2/3 rounded-3xl bg-violet-100" /><div className="grid gap-5 lg:grid-cols-2"><div className="h-72 rounded-3xl bg-violet-200" /><div className="h-72 rounded-3xl bg-emerald-100" /></div></div>; }
+function EmptySchedule({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className="rounded-xl border border-dashed border-emerald-200 bg-white/60 p-3">
+      <p className="font-bold text-slate-900 text-xs">오늘 등록된 일정이 없습니다.</p>
+      <p className="mt-0.5 text-xs text-slate-500">프로젝트 작업이나 일상/긴급 일정을 추가하세요.</p>
+      <button onClick={onAdd} className="mt-2 text-xs font-bold text-emerald-700 underline">
+        + 일정 등록
+      </button>
+    </div>
+  );
+}
 
-function ScheduleComposer({ tasks, schedule, latestSchedule, conflict, onCancel, onSubmit, busy }: { tasks: Array<{ id: number; title: string }>; schedule: { id: number; revision: number; title: string; taskId: number | null; plannedStartAt: Date | null } | null; latestSchedule: { revision: number; title: string; plannedStartAt: Date | null } | null; conflict: boolean; onCancel: () => void; onSubmit: (values: { title: string; taskId: number | null; plannedStartAt: Date; expectedRevision?: number }) => void; busy: boolean }) {
-  const [title, setTitle] = useState("");
-  const [time, setTime] = useState("09:00");
-  const [taskId, setTaskId] = useState("");
-  useEffect(() => {
-    setTitle(schedule?.title ?? "");
-    setTaskId(schedule?.taskId ? String(schedule.taskId) : "");
-    setTime(schedule?.plannedStartAt ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }).format(schedule.plannedStartAt) : "09:00");
-  }, [schedule]);
-  useEffect(() => {
-    const handleEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onCancel(); };
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [onCancel]);
+{/* 스마트 시간 계산 & 카테고리 분리 일정 모달 */}
+function SmartScheduleComposer({
+  tasks,
+  schedule,
+  latestSchedule,
+  conflict,
+  onCancel,
+  onSubmit,
+  busy,
+}: {
+  tasks: Array<{ id: number; title: string }>;
+  schedule: any | null;
+  latestSchedule: any | null;
+  conflict: boolean;
+  onCancel: () => void;
+  onSubmit: (values: {
+    title: string;
+    taskId: number | null;
+    plannedStartAt: Date;
+    plannedEndAt?: Date;
+    notes: string;
+    expectedRevision?: number;
+  }) => void;
+  busy: boolean;
+}) {
+  const parsed = parseScheduleNotes(schedule?.notes);
+  const [category, setCategory] = useState<ScheduleCategory>(parsed.category);
+  const [title, setTitle] = useState(schedule?.title ?? "");
+  const [startTime, setStartTime] = useState(
+    schedule?.plannedStartAt
+      ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }).format(
+          new Date(schedule.plannedStartAt)
+        )
+      : "09:00"
+  );
+  const [duration, setDuration] = useState<number>(parsed.duration);
+  const [breakTime, setBreakTime] = useState<number>(parsed.breakTime);
+  const [taskId, setTaskId] = useState(schedule?.taskId ? String(schedule.taskId) : "");
+
+  // 순수 집중 시간 및 종료 시간 자동 계산
+  const netFocusMinutes = Math.max(0, duration - breakTime);
+
+  const endTimeString = useMemo(() => {
+    const [h, m] = startTime.split(":").map(Number);
+    const endMinutes = h * 60 + m + duration;
+    const endH = Math.floor(endMinutes / 60) % 24;
+    const endM = endMinutes % 60;
+    return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+  }, [startTime, duration]);
+
   const submit = (expectedRevision?: number) => {
     if (!title.trim()) return;
-    const [hour, minute] = time.split(":").map(Number);
+    const [h, m] = startTime.split(":").map(Number);
     const plannedStartAt = schedule?.plannedStartAt ? new Date(schedule.plannedStartAt) : new Date();
-    plannedStartAt.setHours(hour, minute, 0, 0);
-    onSubmit({ title: title.trim(), taskId: taskId ? Number(taskId) : null, plannedStartAt, expectedRevision });
+    plannedStartAt.setHours(h, m, 0, 0);
+
+    const plannedEndAt = new Date(plannedStartAt.getTime() + duration * 60 * 1000);
+    const notesJson = JSON.stringify({ category, duration, breakTime });
+
+    onSubmit({
+      title: title.trim(),
+      taskId: category === "project" && taskId ? Number(taskId) : null,
+      plannedStartAt,
+      plannedEndAt,
+      notes: notesJson,
+      expectedRevision,
+    });
   };
-  return <section role="dialog" aria-modal="true" aria-labelledby="schedule-composer-heading" className="block-shadow fixed inset-x-4 bottom-20 z-50 mx-auto max-w-lg border border-violet-100 bg-white p-5 md:bottom-8"><div className="flex items-center justify-between"><p id="schedule-composer-heading" className="industrial-label text-violet-400">{schedule ? "Edit schedule" : "New schedule"}</p><button onClick={onCancel} className="text-sm font-bold text-violet-600 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">닫기</button></div><input value={title} onChange={event => setTitle(event.target.value)} className="mono-input mt-4" placeholder="일정 제목" autoFocus aria-label="일정 제목" /><div className="mt-3 grid grid-cols-2 gap-3"><input type="time" value={time} onChange={event => setTime(event.target.value)} className="mono-input" aria-label="일정 시간" /><select value={taskId} onChange={event => setTaskId(event.target.value)} className="mono-input" aria-label="연결 Task"><option value="">독립 개인 일정</option>{tasks.map(task => <option key={task.id} value={task.id}>{task.title}</option>)}</select></div>{conflict && schedule && latestSchedule ? <ConflictResolutionNotice entityLabel="Schedule" latest={`${latestSchedule.title}${latestSchedule.plannedStartAt ? ` · ${new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(latestSchedule.plannedStartAt)}` : ""}`} proposed={`${title} · ${time}`} onRetry={() => submit(latestSchedule.revision)} onDismiss={onCancel} /> : null}<button onClick={() => submit()} disabled={busy || !title.trim()} className="pressable mt-4 h-11 w-full rounded-xl bg-violet-500 text-sm font-bold text-white hover:bg-violet-600 disabled:bg-violet-200">{busy ? "저장 중" : schedule ? "일정 저장" : "일정 등록"}</button></section>;
+
+  return (
+    <section
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-x-3 bottom-20 z-50 mx-auto max-w-md rounded-2xl border-2 border-emerald-600 bg-white p-4 shadow-2xl md:bottom-8 text-xs"
+    >
+      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 className="text-sm font-black text-slate-900">{schedule ? "일정 수정" : "새 일정 등록"}</h3>
+        <button onClick={onCancel} className="text-slate-400 hover:text-slate-700">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* 1. 카테고리 3종 탭 (프로젝트 vs 일상 vs 긴급) */}
+      <div className="mt-2.5 grid grid-cols-3 gap-1.5">
+        <button
+          type="button"
+          onClick={() => setCategory("project")}
+          className={`flex items-center justify-center gap-1 rounded-lg py-1.5 font-bold transition-all border ${
+            category === "project"
+              ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
+              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+          }`}
+        >
+          <Wrench className="h-3 w-3" /> 프로젝트
+        </button>
+        <button
+          type="button"
+          onClick={() => setCategory("daily")}
+          className={`flex items-center justify-center gap-1 rounded-lg py-1.5 font-bold transition-all border ${
+            category === "daily"
+              ? "bg-sky-700 text-white border-sky-800 shadow-xs"
+              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+          }`}
+        >
+          <Coffee className="h-3 w-3" /> 일상/생활
+        </button>
+        <button
+          type="button"
+          onClick={() => setCategory("urgent")}
+          className={`flex items-center justify-center gap-1 rounded-lg py-1.5 font-bold transition-all border ${
+            category === "urgent"
+              ? "bg-rose-700 text-white border-rose-800 shadow-xs"
+              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+          }`}
+        >
+          <Zap className="h-3 w-3" /> 긴급/돌발
+        </button>
+      </div>
+
+      {/* 2. 일정 제목 & 프로젝트 선택 */}
+      <div className="mt-2.5 space-y-2">
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          className="mono-input h-9 text-xs font-bold"
+          placeholder={
+            category === "project"
+              ? "일정 제목 (예: 머티리얼 작업)"
+              : category === "daily"
+              ? "일상 일정 (예: 점심 식사, 운동, 병원)"
+              : "긴급 일정 (예: 긴급 버그 수정, 클라이언트 통화)"
+          }
+          autoFocus
+        />
+
+        {category === "project" && (
+          <select
+            value={taskId}
+            onChange={e => {
+              setTaskId(e.target.value);
+              const found = tasks.find(t => String(t.id) === e.target.value);
+              if (found && !title) setTitle(found.title);
+            }}
+            className="mono-input h-9 text-xs font-bold"
+          >
+            <option value="">연결할 Project Task 선택 (선택 사항)</option>
+            {tasks.map(task => (
+              <option key={task.id} value={task.id}>
+                {task.title}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {/* 3. 🌟 스마트 시간 계산 공식 (시작시간 + 예상시간 - 휴식시간) */}
+      <div className="mt-2.5 rounded-xl bg-slate-50 p-2.5 border border-slate-200 space-y-2">
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <label className="font-extrabold text-slate-700 text-[11px] block">시작 시간</label>
+            <input
+              type="time"
+              value={startTime}
+              onChange={e => setStartTime(e.target.value)}
+              className="mono-input h-8 text-xs font-bold mt-0.5"
+            />
+          </div>
+          <div>
+            <label className="font-extrabold text-slate-700 text-[11px] block">예상 소요(분)</label>
+            <input
+              type="number"
+              min="5"
+              step="5"
+              value={duration}
+              onChange={e => setDuration(Number(e.target.value))}
+              className="mono-input h-8 text-xs font-bold mt-0.5"
+            />
+          </div>
+          <div>
+            <label className="font-extrabold text-slate-700 text-[11px] block">휴식 시간(분)</label>
+            <input
+              type="number"
+              min="0"
+              step="5"
+              value={breakTime}
+              onChange={e => setBreakTime(Number(e.target.value))}
+              className="mono-input h-8 text-xs font-bold mt-0.5"
+            />
+          </div>
+        </div>
+
+        {/* 자동 계산 결과 요약 바 */}
+        <div className="flex items-center justify-between pt-1.5 border-t border-slate-200 text-[11px]">
+          <span className="font-bold text-slate-600">
+            ⏰ {startTime} ~ {endTimeString} ({duration}분)
+          </span>
+          <span className="font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+            순수 집중: {formatMinutes(netFocusMinutes)}
+          </span>
+        </div>
+      </div>
+
+      {/* 저장 버튼 */}
+      <button
+        onClick={() => submit()}
+        disabled={busy || !title.trim()}
+        className="pressable mt-3 h-10 w-full rounded-xl bg-emerald-700 text-xs font-black text-white hover:bg-emerald-800 disabled:opacity-40 shadow-sm"
+      >
+        {busy ? "저장 중..." : schedule ? "일정 수정 완료" : "오늘 일정 등록"}
+      </button>
+    </section>
+  );
 }
