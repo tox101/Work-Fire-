@@ -68,34 +68,42 @@ export default function Today() {
   const suggestedProject = suggestedTask?.projectId ? projectById.get(suggestedTask.projectId) : null;
 
   return (
-    <div className="space-y-4">
-      <header className="grid gap-3 border-b border-violet-100 pb-4 sm:grid-cols-[1fr_auto] sm:items-end">
+    <div className="space-y-5">
+      <header className="grid gap-3 border-b border-slate-200 pb-5 sm:grid-cols-[1fr_auto] sm:items-end">
         <div>
-          <p className="industrial-label text-violet-400">Today / {dateHeading()}</p>
-          <h1 className="industrial-title mt-1 text-4xl text-violet-950 sm:text-5xl">오늘의<br />다음 행동</h1>
+          <p className="industrial-label text-emerald-800 font-extrabold">Today / {dateHeading()}</p>
+          <h1 className="industrial-title mt-1.5 text-4xl text-slate-950 sm:text-5xl">오늘의<br />다음 행동</h1>
         </div>
-        <p className="max-w-60 text-[13px] leading-5 text-violet-600">작은 일이라도 끝냅니다. 복잡한 맥락은 시스템이 기억합니다.</p>
+        <p className="max-w-72 text-sm sm:text-base font-bold leading-relaxed text-slate-700">작은 일이라도 끝냅니다. 복잡한 맥락은 시스템이 기억합니다.</p>
       </header>
 
-      <section className="grid gap-4 lg:grid-cols-[1.08fr_.92fr]">
-        <div className="block-shadow border border-violet-200 bg-violet-500 p-4 text-white sm:p-5">
-          <div className="flex items-center justify-between"><p className="industrial-label text-violet-200">{now ? "Now / 진행 중" : "Continue / 이어서"}</p><Clock3 className="h-5 w-5 text-violet-200" /></div>
+      <section className="grid gap-5 lg:grid-cols-[1.08fr_.92fr]">
+        <div className="block-shadow border-2 border-emerald-600 bg-emerald-700 p-5 text-white sm:p-6 shadow-md">
+          <div className="flex items-center justify-between">
+            <p className="industrial-label text-emerald-100 font-extrabold">{now ? "Now / 진행 중" : "Continue / 이어서"}</p>
+            <Clock3 className="h-6 w-6 text-emerald-100" />
+          </div>
           {linkedTask ? (
             <>
-              <h2 className="industrial-title mt-4 text-3xl">{linkedTask.title}</h2>
-              <p className="mt-2 text-sm text-violet-100">{linkedProject?.title ?? "독립 작업"}{linkedStage ? ` / ${linkedStage.title}` : ""}</p>
-              {continueItem?.lastRecord && <blockquote className="mt-4 border-l-2 border-violet-100 pl-3 text-sm leading-5 text-violet-100">“{continueItem.lastRecord.content}”</blockquote>}
-              <div className="mt-4 border-t border-violet-300 pt-3"><p className="industrial-label text-violet-200">Next action</p><p className="mt-1 text-sm font-semibold">{linkedTask.nextAction || "다음 행동을 남겨 주세요."}</p></div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {linkedTask.status !== "in_progress" && <button onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "in_progress" })} className="pressable flex h-10 items-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-violet-700"><Play className="h-3.5 w-3.5 fill-current" /> 시작</button>}
-                <button onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "done" })} className="pressable flex h-10 items-center gap-2 rounded-xl border border-violet-200 px-4 text-sm font-bold hover:bg-violet-600"><Check className="h-4 w-4" /> 완료</button>
-                <button onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "on_hold" })} className="pressable flex h-10 items-center gap-2 px-3 text-sm text-violet-100 hover:text-white"><Pause className="h-4 w-4" /> 보류</button>
+              <h2 className="industrial-title mt-4 text-3xl sm:text-4xl text-white">{linkedTask.title}</h2>
+              <p className="mt-2 text-base font-bold text-emerald-100">{linkedProject?.title ?? "독립 작업"}{linkedStage ? ` / ${linkedStage.title}` : ""}</p>
+              {continueItem?.lastRecord && <blockquote className="mt-4 border-l-4 border-emerald-200 pl-3.5 text-base font-medium leading-relaxed text-emerald-50">“{continueItem.lastRecord.content}”</blockquote>}
+              <div className="mt-5 border-t border-emerald-500/80 pt-4">
+                <p className="industrial-label text-emerald-200 font-extrabold">Next action</p>
+                <p className="mt-1.5 text-base font-bold text-white">{linkedTask.nextAction || "다음 행동을 남겨 주세요."}</p>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-2.5">
+                {linkedTask.status !== "in_progress" && <button onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "in_progress" })} className="pressable flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-base font-extrabold text-emerald-800 shadow"><Play className="h-4 w-4 fill-current" /> 시작</button>}
+                <button onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "done" })} className="pressable flex h-11 items-center gap-2 rounded-xl border-2 border-emerald-200 bg-emerald-800/80 px-5 text-base font-extrabold text-white hover:bg-emerald-800"><Check className="h-5 w-5" /> 완료</button>
+                <button onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "on_hold" })} className="pressable flex h-11 items-center gap-2 px-4 text-base font-bold text-emerald-100 hover:text-white"><Pause className="h-5 w-5" /> 보류</button>
               </div>
             </>
           ) : (
             <div className="py-2">
               {suggestedTask ? <SuggestedTaskSummary task={suggestedTask} projectTitle={suggestedProject?.title ?? "연결된 Project 없음"} onStart={() => setTaskStatus.mutate({ id: suggestedTask.id, expectedRevision: suggestedTask.revision, status: "in_progress" })} /> : <>
-                <h2 className="industrial-title text-3xl">시작할 작업이<br />없습니다.</h2><p className="mt-2 text-sm leading-5 text-violet-100">프로젝트를 만들거나 오늘의 일정을 추가하세요.</p><button onClick={() => setLocation("/projects")} className="pressable mt-4 rounded-lg bg-white px-4 py-2.5 text-sm font-bold text-violet-700">Project 만들기</button>
+                <h2 className="industrial-title text-3xl sm:text-4xl text-white">시작할 작업이<br />없습니다.</h2>
+                <p className="mt-2.5 text-base font-semibold leading-relaxed text-emerald-100">프로젝트를 만들거나 오늘의 일정을 추가하세요.</p>
+                <button onClick={() => setLocation("/projects")} className="pressable mt-5 rounded-xl bg-white px-5 py-3 text-base font-extrabold text-emerald-800 shadow">Project 만들기</button>
               </>}
               {latestRecord && <RecentCaptureSummary content={latestRecord.content} />}
             </div>

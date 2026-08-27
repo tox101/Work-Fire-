@@ -39,12 +39,23 @@ export default function Projects() {
   const submitProject = (event: FormEvent) => { event.preventDefault(); if (projectName.trim()) createProject.mutate({ title: projectName.trim() }); };
 
   if (overview.isLoading) return <div className="space-y-5 animate-pulse"><div className="h-28 bg-neutral-300" /><div className="h-64 bg-neutral-200" /></div>;
-  return <div className="space-y-4">
-    <header className="grid gap-4 border-b border-violet-100 pb-4 lg:grid-cols-[1fr_320px] lg:items-end"><div><p className="industrial-label text-violet-400">Projects / structure</p><h1 className="industrial-title mt-1 text-4xl text-violet-950 sm:text-5xl">작업의<br />구조</h1></div><form onSubmit={submitProject} className="flex gap-2"><input value={projectName} onChange={event => setProjectName(event.target.value)} className="mono-input h-11" placeholder="새 Project 이름" /><button disabled={!projectName.trim() || createProject.isPending} className="pressable flex h-11 shrink-0 items-center gap-2 rounded-xl bg-violet-500 px-4 text-sm font-bold text-white hover:bg-violet-600 disabled:bg-violet-200"><FolderPlus className="h-4 w-4" /> 생성</button></form></header>
+  return <div className="space-y-5">
+    <header className="grid gap-4 border-b border-slate-200 pb-5 lg:grid-cols-[1fr_340px] lg:items-end">
+      <div>
+        <p className="industrial-label text-emerald-800 font-extrabold">Projects / structure</p>
+        <h1 className="industrial-title mt-1.5 text-4xl text-slate-950 sm:text-5xl">작업의<br />구조</h1>
+      </div>
+      <form onSubmit={submitProject} className="flex gap-2">
+        <input value={projectName} onChange={event => setProjectName(event.target.value)} className="mono-input h-12 text-base font-semibold" placeholder="새 Project 이름 입력" />
+        <button disabled={!projectName.trim() || createProject.isPending} className="pressable flex h-12 shrink-0 items-center gap-2 rounded-xl bg-emerald-700 px-5 text-base font-bold text-white hover:bg-emerald-800 disabled:bg-slate-300">
+          <FolderPlus className="h-5 w-5" /> 생성
+        </button>
+      </form>
+    </header>
     <BulkArchivePanel projects={projects} stages={stages} tasks={tasks} onArchive={values => bulkArchive.mutate(values)} busy={bulkArchive.isPending} error={bulkArchive.error?.message} />
     <ArchivedWorkspacePanel data={archivedWorkspace.data} onRestore={(entityType, item) => restoreArchivedItem.mutate({ entityType, id: item.id, expectedRevision: item.revision })} busy={restoreArchivedItem.isPending} />
     <WorkspaceExportPanel />
-    {projects.filter(project => project.status === "active").length ? <div className="grid gap-4 xl:grid-cols-2">{projects.filter(project => project.status === "active").map(project => <ProjectBlock key={project.id} project={project} stages={stagesByProject.get(project.id) ?? []} tasksByStage={tasksByStage} tasks={tasks} todayTaskIds={todayTaskIds} onArchive={() => archiveProject.mutate({ id: project.id, expectedRevision: project.revision })} onTaskStatus={(task, status) => setTaskStatus.mutate({ id: task.id, expectedRevision: task.revision, status })} onTaskArchive={task => archiveTask.mutate({ id: task.id, expectedRevision: task.revision })} />)}</div> : <EmptyProjects />}
+    {projects.filter(project => project.status === "active").length ? <div className="grid gap-5 xl:grid-cols-2">{projects.filter(project => project.status === "active").map(project => <ProjectBlock key={project.id} project={project} stages={stagesByProject.get(project.id) ?? []} tasksByStage={tasksByStage} tasks={tasks} todayTaskIds={todayTaskIds} onArchive={() => archiveProject.mutate({ id: project.id, expectedRevision: project.revision })} onTaskStatus={(task, status) => setTaskStatus.mutate({ id: task.id, expectedRevision: task.revision, status })} onTaskArchive={task => archiveTask.mutate({ id: task.id, expectedRevision: task.revision })} />)}</div> : <EmptyProjects />}
   </div>;
 }
 
@@ -52,10 +63,36 @@ function BulkArchivePanel({ projects, stages, tasks, onArchive, busy, error }: {
   const [projectIds, setProjectIds] = useState<string[]>([]); const [stageIds, setStageIds] = useState<string[]>([]); const [taskIds, setTaskIds] = useState<string[]>([]);
   const choose = (event: React.ChangeEvent<HTMLSelectElement>, setValues: (values: string[]) => void) => setValues(Array.from(event.target.selectedOptions, option => option.value));
   const activeProjects = projects.filter(item => item.status === "active"); const activeStages = stages.filter(item => item.status !== "archived"); const activeTasks = tasks.filter(item => item.status !== "cancelled"); const selectedCount = projectIds.length + stageIds.length + taskIds.length;
-  return <section aria-label="일괄 보관" className="rounded-2xl border border-amber-100 bg-amber-50/55 p-3 sm:p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="industrial-label text-amber-600">Workspace cleanup</p><h2 className="industrial-title mt-1 text-xl text-violet-950">선택 항목 보관</h2></div><p className="text-xs text-violet-500">삭제하지 않고 보관 상태로만 변경합니다.</p></div><div className="mt-3 grid gap-2 sm:grid-cols-3"><label className="text-xs font-bold text-violet-700">Project<select multiple value={projectIds} onChange={event => choose(event, setProjectIds)} aria-label="일괄 보관 Project 선택" className="mono-input mt-1 h-24 w-full p-2 text-xs">{activeProjects.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label className="text-xs font-bold text-violet-700">Stage<select multiple value={stageIds} onChange={event => choose(event, setStageIds)} aria-label="일괄 보관 Stage 선택" className="mono-input mt-1 h-24 w-full p-2 text-xs">{activeStages.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label><label className="text-xs font-bold text-violet-700">Task<select multiple value={taskIds} onChange={event => choose(event, setTaskIds)} aria-label="일괄 보관 Task 선택" className="mono-input mt-1 h-24 w-full p-2 text-xs">{activeTasks.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p aria-live="polite" className="text-xs text-violet-600">{selectedCount ? `${selectedCount}개 선택됨` : "보관할 항목을 선택하세요."}</p><button type="button" onClick={() => onArchive({ projectIds: projectIds.map(Number), stageIds: stageIds.map(Number), taskIds: taskIds.map(Number) })} disabled={!selectedCount || busy} className="pressable inline-flex h-9 items-center gap-1.5 rounded-lg bg-amber-500 px-3 text-xs font-bold text-white hover:bg-amber-600 disabled:opacity-50"><Archive className="h-3.5 w-3.5" />{busy ? "보관 중" : "선택 항목 보관"}</button></div>{error ? <p role="alert" className="mt-2 text-xs font-bold text-rose-700">{error}</p> : null}</section>;
+  return <section aria-label="일괄 보관" className="rounded-2xl border-2 border-amber-200 bg-amber-50/70 p-4 sm:p-5 shadow-sm">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <p className="industrial-label text-amber-900 font-extrabold">Workspace cleanup</p>
+        <h2 className="industrial-title mt-1 text-2xl text-slate-950">선택 항목 보관</h2>
+      </div>
+      <p className="text-sm font-semibold text-slate-700">삭제하지 않고 보관 상태로만 변경합니다.</p>
+    </div>
+    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <label className="text-sm font-bold text-slate-900">Project
+        <select multiple value={projectIds} onChange={event => choose(event, setProjectIds)} aria-label="일괄 보관 Project 선택" className="mono-input mt-1.5 h-28 w-full p-2.5 text-sm font-medium">{activeProjects.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select>
+      </label>
+      <label className="text-sm font-bold text-slate-900">Stage
+        <select multiple value={stageIds} onChange={event => choose(event, setStageIds)} aria-label="일괄 보관 Stage 선택" className="mono-input mt-1.5 h-28 w-full p-2.5 text-sm font-medium">{activeStages.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select>
+      </label>
+      <label className="text-sm font-bold text-slate-900">Task
+        <select multiple value={taskIds} onChange={event => choose(event, setTaskIds)} aria-label="일괄 보관 Task 선택" className="mono-input mt-1.5 h-28 w-full p-2.5 text-sm font-medium">{activeTasks.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select>
+      </label>
+    </div>
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+      <p aria-live="polite" className="text-sm font-bold text-slate-800">{selectedCount ? `${selectedCount}개 선택됨` : "보관할 항목을 선택하세요."}</p>
+      <button type="button" onClick={() => onArchive({ projectIds: projectIds.map(Number), stageIds: stageIds.map(Number), taskIds: taskIds.map(Number) })} disabled={!selectedCount || busy} className="pressable inline-flex h-10 items-center gap-2 rounded-xl bg-amber-600 px-4 text-sm font-extrabold text-white hover:bg-amber-700 disabled:opacity-50 shadow-sm">
+        <Archive className="h-4 w-4" />{busy ? "보관 중..." : "선택 항목 보관"}
+      </button>
+    </div>
+    {error ? <p role="alert" className="mt-2 text-sm font-bold text-rose-700">{error}</p> : null}
+  </section>;
 }
 
-function EmptyProjects() { return <section className="block-shadow border border-violet-100 bg-white/90 p-4 sm:p-5"><span className="grid h-9 w-9 place-items-center rounded-xl bg-violet-100 text-violet-500"><SquareStack className="h-4 w-4" /></span><h2 className="industrial-title mt-3 text-3xl text-violet-950">첫 Project를<br />만드세요.</h2><p className="mt-2 max-w-xl text-sm leading-5 text-violet-600">Project를 만들면 Stage와 Task를 단계적으로 연결할 수 있습니다. Today에서는 필요한 맥락만 작게 표시됩니다.</p></section>; }
+function EmptyProjects() { return <section className="block-shadow border-2 border-slate-200 bg-white p-6 sm:p-8"><span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-100 text-emerald-800 font-bold"><SquareStack className="h-5 w-5" /></span><h2 className="industrial-title mt-4 text-3xl text-slate-950">첫 Project를<br />만드세요.</h2><p className="mt-3 max-w-xl text-base font-semibold leading-relaxed text-slate-700">Project를 만들면 Stage와 Task를 단계적으로 연결할 수 있습니다. Today에서는 필요한 맥락만 작게 표시됩니다.</p></section>; }
 
 function ProjectBlock({ project, stages, tasksByStage, tasks, todayTaskIds, onArchive, onTaskStatus, onTaskArchive }: { project: ProjectItem; stages: StageItem[]; tasksByStage: Map<number, TaskItem[]>; tasks: TaskItem[]; todayTaskIds: Set<number>; onArchive: () => void; onTaskStatus: (task: TaskItem, status: TaskStatus) => void; onTaskArchive: (task: TaskItem) => void }) {
   const utils = trpc.useUtils(); const [stageTitle, setStageTitle] = useState(""); const [editing, setEditing] = useState(false); const [title, setTitle] = useState(project.title); const [description, setDescription] = useState(project.description ?? ""); const [conflict, setConflict] = useState(false);
