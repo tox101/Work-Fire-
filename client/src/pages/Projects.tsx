@@ -1,4 +1,23 @@
-import { Archive, Check, ChevronDown, ChevronRight, Circle, FolderPlus, HelpCircle, Layers, Pencil, Play, Plus, Sparkles, SquareStack, Trash2, X } from "lucide-react";
+import {
+  Archive,
+  Calendar,
+  CalendarPlus,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  Clock,
+  FolderPlus,
+  HelpCircle,
+  Layers,
+  Pencil,
+  Play,
+  Plus,
+  Sparkles,
+  SquareStack,
+  Trash2,
+  X,
+} from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ArchivedWorkspacePanel } from "@/components/ArchivedWorkspacePanel";
@@ -9,7 +28,15 @@ import { trpc } from "@/lib/trpc";
 type TaskStatus = "inbox" | "planned" | "in_progress" | "done" | "on_hold" | "cancelled";
 type ProjectItem = { id: number; title: string; description: string | null; status: string; revision: number };
 type StageItem = { id: number; projectId: number; title: string; status: string; revision: number };
-type TaskItem = { id: number; projectId: number | null; stageId: number | null; title: string; status: TaskStatus; nextAction: string | null; revision: number };
+type TaskItem = {
+  id: number;
+  projectId: number | null;
+  stageId: number | null;
+  title: string;
+  status: TaskStatus;
+  nextAction: string | null;
+  revision: number;
+};
 
 function dayWindow() {
   const start = new Date();
@@ -80,6 +107,14 @@ export default function Projects() {
     onError: handleMutationError,
   });
 
+  const createSchedule = trpc.workspace.createSchedule.useMutation({
+    onSuccess: () => {
+      void utils.workspace.overview.invalidate();
+      toast.success("일정(날짜/시간)을 등록했습니다.");
+    },
+    onError: handleMutationError,
+  });
+
   const projects = (overview.data?.projects ?? []) as ProjectItem[];
   const stages = (overview.data?.stages ?? []) as StageItem[];
   const tasks = (overview.data?.tasks ?? []) as TaskItem[];
@@ -90,6 +125,14 @@ export default function Projects() {
     () => new Set(overview.data?.schedules.flatMap(schedule => (schedule.taskId ? [schedule.taskId] : [])) ?? []),
     [overview.data?.schedules]
   );
+
+  const schedulesByTaskId = useMemo(() => {
+    const map = new Map<number, any>();
+    overview.data?.schedules.forEach(s => {
+      if (s.taskId) map.set(s.taskId, s);
+    });
+    return map;
+  }, [overview.data?.schedules]);
 
   const submitProject = (event: FormEvent) => {
     event.preventDefault();
@@ -118,7 +161,7 @@ export default function Projects() {
             className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-900"
           >
             <HelpCircle className="h-3.5 w-3.5 text-emerald-700" />
-            <span>다음 행동이란?</span>
+            <span>세부작업 & 날짜 설정이란?</span>
           </button>
         </div>
         <form onSubmit={submitProject} className="flex gap-1.5 w-full sm:w-auto">
@@ -137,20 +180,17 @@ export default function Projects() {
         </form>
       </header>
 
-      {/* 도움말 안내 팝업/배너 */}
+      {/* 도움말 안내 팝업 */}
       {showHelp && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs text-slate-800 shadow-2xs">
           <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="font-black text-emerald-950 text-sm">💡 '다음 행동(Next Action)'이란?</p>
-              <p className="mt-1 leading-relaxed text-slate-700">
-                큰 Task를 마주했을 때 미루지 않고 즉시 시작할 수 있도록 <strong>"지금 당장 실행할 가장 작고 구체적인 첫 번째 행동"</strong>을 적어두는 기능입니다.
+            <div className="space-y-1">
+              <p className="font-black text-emerald-950 text-sm">💡 세부작업 & 날짜 설정 안내</p>
+              <p className="leading-relaxed text-slate-700">
+                1. <strong>세부작업</strong>: 해당 Task를 실행할 때 필요한 구체적인 첫 행동 메모입니다. (예: Task [머티리얼 선택] 👉 세부작업 [텍스쳐 제작 및 적용])
               </p>
-              <p className="mt-0.5 text-emerald-900 font-semibold">
-                예) Task: [머티리얼 선택] 👉 다음 행동: [텍스쳐 제작 및 적용] / Task: [보고서 작성] 👉 다음 행동: [참고자료 3개 수집]
-              </p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                * 필수가 아니므로 필요할 때만 입력하시면 되며, 비워두셔도 정상 작동합니다.
+              <p className="leading-relaxed text-slate-700">
+                2. <strong>날짜/시간 설정 (📅)</strong>: 특정 날짜나 오늘 몇 시에 할지 지정하면, <strong>Today(오늘의 실행) 화면 타임라인에 자동으로 등록</strong>되어 제시간에 안내됩니다.
               </p>
             </div>
             <button onClick={() => setShowHelp(false)} className="text-slate-400 hover:text-slate-700 p-1">
@@ -186,11 +226,22 @@ export default function Projects() {
               tasksByStage={tasksByStage}
               tasks={tasks}
               todayTaskIds={todayTaskIds}
+              schedulesByTaskId={schedulesByTaskId}
               onArchive={() => archiveProject.mutate({ id: project.id, expectedRevision: project.revision })}
               onTaskStatus={(task, status) =>
                 setTaskStatus.mutate({ id: task.id, expectedRevision: task.revision, status })
               }
               onTaskArchive={task => archiveTask.mutate({ id: task.id, expectedRevision: task.revision })}
+              onScheduleCreate={(task, date, time) => {
+                const [hour, minute] = (time || "09:00").split(":").map(Number);
+                const plannedStartAt = date ? new Date(date) : new Date();
+                plannedStartAt.setHours(hour, minute, 0, 0);
+                createSchedule.mutate({
+                  title: task.title,
+                  taskId: task.id,
+                  plannedStartAt,
+                });
+              }}
             />
           ))}
         </div>
@@ -208,18 +259,22 @@ function GanttProjectCard({
   tasksByStage,
   tasks,
   todayTaskIds,
+  schedulesByTaskId,
   onArchive,
   onTaskStatus,
   onTaskArchive,
+  onScheduleCreate,
 }: {
   project: ProjectItem;
   stages: StageItem[];
   tasksByStage: Map<number, TaskItem[]>;
   tasks: TaskItem[];
   todayTaskIds: Set<number>;
+  schedulesByTaskId: Map<number, any>;
   onArchive: () => void;
   onTaskStatus: (task: TaskItem, status: TaskStatus) => void;
   onTaskArchive: (task: TaskItem) => void;
+  onScheduleCreate: (task: TaskItem, date: string, time: string) => void;
 }) {
   const utils = trpc.useUtils();
   const [stageTitle, setStageTitle] = useState("");
@@ -265,7 +320,9 @@ function GanttProjectCard({
           )}
           {/* 인라인 미니 진행 바 */}
           <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2 py-0.5 rounded-full text-xs font-bold text-slate-800 shrink-0">
-            <span>{progress.completed}/{progress.total}</span>
+            <span>
+              {progress.completed}/{progress.total}
+            </span>
             <div className="w-14 h-1.5 bg-slate-200 rounded-full overflow-hidden">
               <div className="h-full bg-emerald-600" style={{ width: `${progress.percent}%` }} />
             </div>
@@ -354,9 +411,7 @@ function GanttProjectCard({
                       ({doneCount}/{totalCount})
                     </span>
                   </button>
-                  {idx < activeStages.length - 1 && (
-                    <span className="text-slate-300 px-1 font-bold">›</span>
-                  )}
+                  {idx < activeStages.length - 1 && <span className="text-slate-300 px-1 font-bold">›</span>}
                 </div>
               );
             })}
@@ -364,7 +419,7 @@ function GanttProjectCard({
         </div>
       )}
 
-      {/* 3. Stage 및 Task 목록 (극도로 컴팩트한 구조) */}
+      {/* 3. Stage 및 Task 목록 */}
       <div className="p-2.5 sm:p-3 space-y-2">
         {activeStages.length ? (
           <div className="space-y-2">
@@ -376,8 +431,10 @@ function GanttProjectCard({
                   projectId={project.id}
                   stage={stage}
                   tasks={tasksByStage.get(stage.id) ?? []}
+                  schedulesByTaskId={schedulesByTaskId}
                   onTaskStatus={onTaskStatus}
                   onTaskArchive={onTaskArchive}
+                  onScheduleCreate={onScheduleCreate}
                 />
               ))}
           </div>
@@ -413,33 +470,44 @@ function GanttProjectCard({
   );
 }
 
-{/* 초간편 Stage 블록 (Task 입력 초간소화) */}
+{/* 초간편 Stage 블록 (Task 입력 초간소화 + 날짜/세부작업 연동) */}
 function CompactStageBlock({
   projectId,
   stage,
   tasks,
+  schedulesByTaskId,
   onTaskStatus,
   onTaskArchive,
+  onScheduleCreate,
 }: {
   projectId: number;
   stage: StageItem;
   tasks: TaskItem[];
+  schedulesByTaskId: Map<number, any>;
   onTaskStatus: (task: TaskItem, status: TaskStatus) => void;
   onTaskArchive: (task: TaskItem) => void;
+  onScheduleCreate: (task: TaskItem, date: string, time: string) => void;
 }) {
   const utils = trpc.useUtils();
   const [taskTitle, setTaskTitle] = useState("");
   const [nextAction, setNextAction] = useState("");
   const [showNextAction, setShowNextAction] = useState(false);
+  const [showDateInput, setShowDateInput] = useState(false);
+  const [planDate, setPlanDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [planTime, setPlanTime] = useState("09:00");
   const [open, setOpen] = useState(true);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(stage.title);
 
   const createTask = trpc.workspace.createTask.useMutation({
-    onSuccess: () => {
+    onSuccess: async created => {
       setTaskTitle("");
       setNextAction("");
       setShowNextAction(false);
+      if (showDateInput && created) {
+        onScheduleCreate(created as TaskItem, planDate, planTime);
+        setShowDateInput(false);
+      }
       void utils.workspace.overview.invalidate();
     },
   });
@@ -531,11 +599,18 @@ function CompactStageBlock({
           {tasks
             .filter(task => task.status !== "cancelled")
             .map(task => (
-              <CompactTaskLine key={task.id} task={task} onStatus={onTaskStatus} onArchive={onTaskArchive} />
+              <CompactTaskLine
+                key={task.id}
+                task={task}
+                schedule={schedulesByTaskId.get(task.id)}
+                onStatus={onTaskStatus}
+                onArchive={onTaskArchive}
+                onScheduleCreate={onScheduleCreate}
+              />
             ))}
 
-          {/* 초간편 태스크 추가 폼 */}
-          <form onSubmit={handleTaskSubmit} className="pt-1">
+          {/* 초간편 태스크 추가 폼 (엔터 1초 입력 + 세부작업 & 날짜 옵션) */}
+          <form onSubmit={handleTaskSubmit} className="pt-1 space-y-1">
             <div className="flex gap-1 items-center">
               <input
                 value={taskTitle}
@@ -548,30 +623,21 @@ function CompactStageBlock({
                   type="button"
                   onClick={() => setShowNextAction(true)}
                   className="h-8 px-2 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg shrink-0"
-                  title="지금 당장 시작할 다음 행동 메모 추가"
+                  title="태스크의 세부 작업 내용 메모"
                 >
-                  + 다음 행동
+                  + 세부작업
                 </button>
-              ) : (
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <input
-                    value={nextAction}
-                    onChange={event => setNextAction(event.target.value)}
-                    className="mono-input h-8 text-xs font-semibold w-28 sm:w-36 bg-white"
-                    placeholder="다음 행동 입력"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNextAction("");
-                      setShowNextAction(false);
-                    }}
-                    className="p-1 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
+              ) : null}
+              {!showDateInput ? (
+                <button
+                  type="button"
+                  onClick={() => setShowDateInput(true)}
+                  className="h-8 px-2 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-lg shrink-0 flex items-center gap-1"
+                  title="날짜/시간 지정"
+                >
+                  <Calendar className="h-3 w-3" /> + 날짜
+                </button>
+              ) : null}
               <button
                 type="submit"
                 disabled={!taskTitle.trim() || createTask.isPending}
@@ -580,6 +646,57 @@ function CompactStageBlock({
                 추가
               </button>
             </div>
+
+            {/* 세부작업 또는 날짜 인풋 확장 영역 */}
+            {(showNextAction || showDateInput) && (
+              <div className="flex flex-wrap gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 text-xs">
+                {showNextAction && (
+                  <div className="flex items-center gap-1 flex-1 min-w-[160px]">
+                    <span className="text-[10px] font-bold text-slate-500 shrink-0">세부작업:</span>
+                    <input
+                      value={nextAction}
+                      onChange={event => setNextAction(event.target.value)}
+                      className="mono-input h-7 text-xs font-semibold flex-1"
+                      placeholder="구체적인 세부 작업 내용 입력"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNextAction("");
+                        setShowNextAction(false);
+                      }}
+                      className="p-1 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+                {showDateInput && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold text-emerald-700 shrink-0">📅 날짜/시간:</span>
+                    <input
+                      type="date"
+                      value={planDate}
+                      onChange={event => setPlanDate(event.target.value)}
+                      className="mono-input h-7 text-xs w-32 px-1.5"
+                    />
+                    <input
+                      type="time"
+                      value={planTime}
+                      onChange={event => setPlanTime(event.target.value)}
+                      className="mono-input h-7 text-xs w-20 px-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowDateInput(false)}
+                      className="p-1 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </form>
         </div>
       )}
@@ -590,17 +707,24 @@ function CompactStageBlock({
 {/* 초슬림 태스크 라인 */}
 function CompactTaskLine({
   task,
+  schedule,
   onStatus,
   onArchive,
+  onScheduleCreate,
 }: {
   task: TaskItem;
+  schedule?: any;
   onStatus: (task: TaskItem, status: TaskStatus) => void;
   onArchive: (task: TaskItem) => void;
+  onScheduleCreate: (task: TaskItem, date: string, time: string) => void;
 }) {
   const utils = trpc.useUtils();
   const [editing, setEditing] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [nextAction, setNextAction] = useState(task.nextAction ?? "");
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [time, setTime] = useState("09:00");
 
   const updateTask = trpc.workspace.updateTask.useMutation({
     onSuccess: () => {
@@ -618,6 +742,11 @@ function CompactTaskLine({
     });
 
   const isDone = task.status === "done";
+  const scheduleTime = schedule?.plannedStartAt
+    ? new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(
+        new Date(schedule.plannedStartAt)
+      )
+    : null;
 
   return (
     <div className="group relative flex items-center justify-between gap-1.5 rounded-lg bg-white px-2 py-1 border border-slate-100 shadow-2xs hover:border-slate-300 transition-colors">
@@ -640,14 +769,32 @@ function CompactTaskLine({
           {task.title}
         </span>
 
+        {/* 세부작업 표시 */}
         {task.nextAction && (
           <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded truncate max-w-40 hidden sm:inline">
-            👉 {task.nextAction}
+            📝 {task.nextAction}
+          </span>
+        )}
+
+        {/* 연결된 일정(날짜/시간) 표시 */}
+        {scheduleTime && (
+          <span className="text-[10px] font-bold text-sky-800 bg-sky-50 border border-sky-200 px-1 py-0.2 rounded truncate shrink-0">
+            📅 {scheduleTime}
           </span>
         )}
       </div>
 
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        {!scheduleTime && (
+          <button
+            type="button"
+            onClick={() => setShowScheduleModal(true)}
+            className="p-1 text-slate-400 hover:text-sky-700"
+            title="날짜/시간 설정"
+          >
+            <CalendarPlus className="h-3 w-3" />
+          </button>
+        )}
         {task.status !== "in_progress" && !isDone && (
           <button
             onClick={() => onStatus(task, "in_progress")}
@@ -657,21 +804,35 @@ function CompactTaskLine({
             <Play className="h-3 w-3" />
           </button>
         )}
-        <button
-          onClick={() => setEditing(!editing)}
-          className="p-1 text-slate-400 hover:text-slate-800"
-          title="수정"
-        >
+        <button onClick={() => setEditing(!editing)} className="p-1 text-slate-400 hover:text-slate-800" title="수정">
           <Pencil className="h-3 w-3" />
         </button>
-        <button
-          onClick={() => onArchive(task)}
-          className="p-1 text-slate-400 hover:text-rose-600"
-          title="보관"
-        >
+        <button onClick={() => onArchive(task)} className="p-1 text-slate-400 hover:text-rose-600" title="보관">
           <Archive className="h-3 w-3" />
         </button>
       </div>
+
+      {/* 날짜 설정 간이 모달 */}
+      {showScheduleModal && (
+        <div className="absolute inset-x-1 z-20 flex flex-wrap items-center gap-1.5 bg-sky-50 p-1.5 rounded-lg border-2 border-sky-500 shadow-md text-xs">
+          <span className="font-bold text-sky-950 text-[11px]">📅 날짜/시간 설정:</span>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="mono-input h-6 text-xs w-28 px-1" />
+          <input type="time" value={time} onChange={e => setTime(e.target.value)} className="mono-input h-6 text-xs w-18 px-1" />
+          <button
+            type="button"
+            onClick={() => {
+              onScheduleCreate(task, date, time);
+              setShowScheduleModal(false);
+            }}
+            className="rounded bg-sky-700 px-2 py-0.5 text-xs font-bold text-white hover:bg-sky-800"
+          >
+            등록
+          </button>
+          <button type="button" onClick={() => setShowScheduleModal(false)} className="text-slate-500 p-0.5">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* 수정 폼 */}
       {editing && (
@@ -691,7 +852,7 @@ function CompactTaskLine({
             value={nextAction}
             onChange={event => setNextAction(event.target.value)}
             className="mono-input h-7 text-xs w-28"
-            placeholder="다음 행동"
+            placeholder="세부작업"
           />
           <button className="rounded bg-emerald-700 px-2 text-xs font-bold text-white">저장</button>
           <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-500 px-1">

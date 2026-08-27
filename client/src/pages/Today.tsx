@@ -102,8 +102,8 @@ export default function Today() {
                 </blockquote>
               )}
               <div className="mt-2.5 rounded-lg bg-emerald-800/80 p-2 border border-emerald-600">
-                <span className="text-[11px] font-extrabold uppercase text-emerald-200 block">Next Action</span>
-                <p className="mt-0.5 text-xs font-bold text-white">{linkedTask.nextAction || "다음 행동을 남겨 주세요."}</p>
+                <span className="text-[11px] font-extrabold uppercase text-emerald-200 block">세부 작업 (Action)</span>
+                <p className="mt-0.5 text-xs font-bold text-white">{linkedTask.nextAction || "세부 작업 내용이 없습니다."}</p>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {linkedTask.status !== "in_progress" && (
