@@ -1,10 +1,9 @@
-import { Archive, Check, ChevronDown, ChevronRight, Circle, FolderPlus, Pencil, Play, Plus, SquareStack, Trash2, X } from "lucide-react";
+import { Archive, Check, ChevronDown, ChevronRight, Circle, FolderPlus, HelpCircle, Layers, Pencil, Play, Plus, Sparkles, SquareStack, Trash2, X } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ConflictResolutionNotice } from "@/components/ConflictResolutionNotice";
 import { ArchivedWorkspacePanel } from "@/components/ArchivedWorkspacePanel";
 import { WorkspaceExportPanel } from "@/components/WorkspaceExportPanel";
-import { getProjectNextStage, getProjectProgress, getStageGuide } from "@/lib/workspaceSummary";
+import { getProjectProgress } from "@/lib/workspaceSummary";
 import { trpc } from "@/lib/trpc";
 
 type TaskStatus = "inbox" | "planned" | "in_progress" | "done" | "on_hold" | "cancelled";
@@ -12,90 +11,188 @@ type ProjectItem = { id: number; title: string; description: string | null; stat
 type StageItem = { id: number; projectId: number; title: string; status: string; revision: number };
 type TaskItem = { id: number; projectId: number | null; stageId: number | null; title: string; status: TaskStatus; nextAction: string | null; revision: number };
 
-function dayWindow() { const start = new Date(); start.setHours(0, 0, 0, 0); const end = new Date(start); end.setDate(end.getDate() + 1); return { start, end }; }
-function groupBy<T>(items: T[], selector: (item: T) => number) { const map = new Map<number, T[]>(); items.forEach(item => { const key = selector(item); map.set(key, [...(map.get(key) ?? []), item]); }); return map; }
-function isConflict(error: { data?: { code?: string } | null }) { return error.data?.code === "CONFLICT"; }
+function dayWindow() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
+function groupBy<T>(items: T[], selector: (item: T) => number) {
+  const map = new Map<number, T[]>();
+  items.forEach(item => {
+    const key = selector(item);
+    map.set(key, [...(map.get(key) ?? []), item]);
+  });
+  return map;
+}
 
 export default function Projects() {
   const [window] = useState(dayWindow);
   const overview = trpc.workspace.overview.useQuery(window);
   const utils = trpc.useUtils();
   const [projectName, setProjectName] = useState("");
-  const handleMutationError = (error: { message: string }) => { toast.error(error.message); void utils.workspace.overview.invalidate(); void utils.workspace.continue.invalidate(); };
-  const createProject = trpc.workspace.createProject.useMutation({ onSuccess: () => { setProjectName(""); void utils.workspace.overview.invalidate(); }, onError: handleMutationError });
+  const [showHelp, setShowHelp] = useState(false);
+
+  const handleMutationError = (error: { message: string }) => {
+    toast.error(error.message);
+    void utils.workspace.overview.invalidate();
+    void utils.workspace.continue.invalidate();
+  };
+
+  const createProject = trpc.workspace.createProject.useMutation({
+    onSuccess: () => {
+      setProjectName("");
+      void utils.workspace.overview.invalidate();
+      toast.success("새 프로젝트를 생성했습니다.");
+    },
+    onError: handleMutationError,
+  });
+
   const archivedWorkspace = trpc.workspace.archivedWorkspace.useQuery();
-  const restoreArchivedItem = trpc.workspace.restoreArchivedWorkspaceItem.useMutation({ onSuccess: () => { void utils.workspace.overview.invalidate(); void utils.workspace.continue.invalidate(); void archivedWorkspace.refetch(); }, onError: handleMutationError });
-  const archiveProject = trpc.workspace.archiveProject.useMutation({ onSuccess: () => void utils.workspace.overview.invalidate(), onError: handleMutationError });
-  const archiveTask = trpc.workspace.archiveTask.useMutation({ onSuccess: () => void utils.workspace.overview.invalidate(), onError: handleMutationError });
-  const bulkArchive = trpc.workspace.bulkArchiveWorkspaceItems.useMutation({ onSuccess: () => void utils.workspace.overview.invalidate(), onError: handleMutationError });
-  const setTaskStatus = trpc.workspace.setTaskStatus.useMutation({ onSuccess: () => { void utils.workspace.overview.invalidate(); void utils.workspace.continue.invalidate(); }, onError: handleMutationError });
+  const restoreArchivedItem = trpc.workspace.restoreArchivedWorkspaceItem.useMutation({
+    onSuccess: () => {
+      void utils.workspace.overview.invalidate();
+      void utils.workspace.continue.invalidate();
+      void archivedWorkspace.refetch();
+    },
+    onError: handleMutationError,
+  });
+
+  const archiveProject = trpc.workspace.archiveProject.useMutation({
+    onSuccess: () => void utils.workspace.overview.invalidate(),
+    onError: handleMutationError,
+  });
+  const archiveTask = trpc.workspace.archiveTask.useMutation({
+    onSuccess: () => void utils.workspace.overview.invalidate(),
+    onError: handleMutationError,
+  });
+  const bulkArchive = trpc.workspace.bulkArchiveWorkspaceItems.useMutation({
+    onSuccess: () => void utils.workspace.overview.invalidate(),
+    onError: handleMutationError,
+  });
+  const setTaskStatus = trpc.workspace.setTaskStatus.useMutation({
+    onSuccess: () => {
+      void utils.workspace.overview.invalidate();
+      void utils.workspace.continue.invalidate();
+    },
+    onError: handleMutationError,
+  });
+
   const projects = (overview.data?.projects ?? []) as ProjectItem[];
   const stages = (overview.data?.stages ?? []) as StageItem[];
   const tasks = (overview.data?.tasks ?? []) as TaskItem[];
+
   const stagesByProject = useMemo(() => groupBy(stages, item => item.projectId), [stages]);
   const tasksByStage = useMemo(() => groupBy(tasks, item => item.stageId ?? 0), [tasks]);
-  const todayTaskIds = useMemo(() => new Set(overview.data?.schedules.flatMap(schedule => schedule.taskId ? [schedule.taskId] : []) ?? []), [overview.data?.schedules]);
-  const submitProject = (event: FormEvent) => { event.preventDefault(); if (projectName.trim()) createProject.mutate({ title: projectName.trim() }); };
+  const todayTaskIds = useMemo(
+    () => new Set(overview.data?.schedules.flatMap(schedule => (schedule.taskId ? [schedule.taskId] : [])) ?? []),
+    [overview.data?.schedules]
+  );
 
-  if (overview.isLoading) return <div className="space-y-4 animate-pulse"><div className="h-16 bg-neutral-200 rounded-xl" /><div className="h-48 bg-neutral-100 rounded-xl" /></div>;
+  const submitProject = (event: FormEvent) => {
+    event.preventDefault();
+    if (projectName.trim()) createProject.mutate({ title: projectName.trim() });
+  };
+
+  if (overview.isLoading)
+    return (
+      <div className="space-y-3 animate-pulse">
+        <div className="h-12 bg-slate-200 rounded-xl" />
+        <div className="h-40 bg-slate-100 rounded-xl" />
+      </div>
+    );
+
+  const activeProjects = projects.filter(project => project.status === "active");
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto pb-16">
-      {/* 컴팩트 헤더 & 신규 프로젝트 인라인 생성 */}
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-        <div>
+    <div className="space-y-3 max-w-6xl mx-auto pb-16">
+      {/* 1. 컴팩트 헤더 & 신규 프로젝트 인라인 생성 */}
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+        <div className="flex items-center gap-2">
           <h1 className="text-2xl font-black text-slate-950">프로젝트 관리</h1>
-          <p className="text-xs font-semibold text-slate-600">목표를 Stage와 Task로 빠르고 가볍게 구조화합니다.</p>
+          <button
+            type="button"
+            onClick={() => setShowHelp(!showHelp)}
+            className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-900"
+          >
+            <HelpCircle className="h-3.5 w-3.5 text-emerald-700" />
+            <span>다음 행동이란?</span>
+          </button>
         </div>
         <form onSubmit={submitProject} className="flex gap-1.5 w-full sm:w-auto">
           <input
             value={projectName}
             onChange={event => setProjectName(event.target.value)}
-            className="mono-input h-10 px-3 text-sm font-semibold sm:w-64"
+            className="mono-input h-9 px-3 text-xs font-bold sm:w-64"
             placeholder="+ 새 Project 이름 입력"
           />
           <button
             disabled={!projectName.trim() || createProject.isPending}
-            className="pressable flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white hover:bg-emerald-800 disabled:bg-slate-300 shadow-sm"
+            className="pressable flex h-9 shrink-0 items-center gap-1 rounded-lg bg-emerald-700 px-3.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:bg-slate-300 shadow-2xs"
           >
-            <FolderPlus className="h-4 w-4" /> 생성
+            <FolderPlus className="h-3.5 w-3.5" /> 생성
           </button>
         </form>
       </header>
 
-      {/* 공간 절약형 컴팩트 툴바 (선택 보관 & 백업 & 보관함) */}
-      <div className="space-y-2">
-        <CompactTools
-          projects={projects}
-          stages={stages}
-          tasks={tasks}
-          onArchive={values => bulkArchive.mutate(values)}
-          busy={bulkArchive.isPending}
-          error={bulkArchive.error?.message}
-          archivedData={archivedWorkspace.data}
-          onRestore={(entityType, item) => restoreArchivedItem.mutate({ entityType, id: item.id, expectedRevision: item.revision })}
-          restoreBusy={restoreArchivedItem.isPending}
-        />
-      </div>
+      {/* 도움말 안내 팝업/배너 */}
+      {showHelp && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs text-slate-800 shadow-2xs">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="font-black text-emerald-950 text-sm">💡 '다음 행동(Next Action)'이란?</p>
+              <p className="mt-1 leading-relaxed text-slate-700">
+                큰 Task를 마주했을 때 미루지 않고 즉시 시작할 수 있도록 <strong>"지금 당장 실행할 가장 작고 구체적인 첫 번째 행동"</strong>을 적어두는 기능입니다.
+              </p>
+              <p className="mt-0.5 text-emerald-900 font-semibold">
+                예) Task: [머티리얼 선택] 👉 다음 행동: [텍스쳐 제작 및 적용] / Task: [보고서 작성] 👉 다음 행동: [참고자료 3개 수집]
+              </p>
+              <p className="mt-1 text-[11px] text-slate-500">
+                * 필수가 아니므로 필요할 때만 입력하시면 되며, 비워두셔도 정상 작동합니다.
+              </p>
+            </div>
+            <button onClick={() => setShowHelp(false)} className="text-slate-400 hover:text-slate-700 p-1">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* 활성 프로젝트 목록 (초슬림 & 초간편 입력 구조) */}
-      {projects.filter(project => project.status === "active").length ? (
-        <div className="grid gap-4">
-          {projects
-            .filter(project => project.status === "active")
-            .map(project => (
-              <CompactProjectBlock
-                key={project.id}
-                project={project}
-                stages={stagesByProject.get(project.id) ?? []}
-                tasksByStage={tasksByStage}
-                tasks={tasks}
-                todayTaskIds={todayTaskIds}
-                onArchive={() => archiveProject.mutate({ id: project.id, expectedRevision: project.revision })}
-                onTaskStatus={(task, status) => setTaskStatus.mutate({ id: task.id, expectedRevision: task.revision, status })}
-                onTaskArchive={task => archiveTask.mutate({ id: task.id, expectedRevision: task.revision })}
-              />
-            ))}
+      {/* 2. 초슬림 상단 툴바 (선택 보관 & 백업) */}
+      <CompactTools
+        projects={projects}
+        stages={stages}
+        tasks={tasks}
+        onArchive={values => bulkArchive.mutate(values)}
+        busy={bulkArchive.isPending}
+        error={bulkArchive.error?.message}
+        archivedData={archivedWorkspace.data}
+        onRestore={(entityType, item) =>
+          restoreArchivedItem.mutate({ entityType, id: item.id, expectedRevision: item.revision })
+        }
+        restoreBusy={restoreArchivedItem.isPending}
+      />
+
+      {/* 3. 활성 프로젝트 목록 (미니 간트 차트 로드맵 내장) */}
+      {activeProjects.length ? (
+        <div className="space-y-3">
+          {activeProjects.map(project => (
+            <GanttProjectCard
+              key={project.id}
+              project={project}
+              stages={stagesByProject.get(project.id) ?? []}
+              tasksByStage={tasksByStage}
+              tasks={tasks}
+              todayTaskIds={todayTaskIds}
+              onArchive={() => archiveProject.mutate({ id: project.id, expectedRevision: project.revision })}
+              onTaskStatus={(task, status) =>
+                setTaskStatus.mutate({ id: task.id, expectedRevision: task.revision, status })
+              }
+              onTaskArchive={task => archiveTask.mutate({ id: task.id, expectedRevision: task.revision })}
+            />
+          ))}
         </div>
       ) : (
         <EmptyProjects />
@@ -104,140 +201,8 @@ export default function Projects() {
   );
 }
 
-{/* 접이식 공간 절약형 툴바 (선택 항목 보관 + 내보내기) */}
-function CompactTools({
-  projects,
-  stages,
-  tasks,
-  onArchive,
-  busy,
-  error,
-  archivedData,
-  onRestore,
-  restoreBusy,
-}: {
-  projects: ProjectItem[];
-  stages: StageItem[];
-  tasks: TaskItem[];
-  onArchive: (values: { projectIds: number[]; stageIds: number[]; taskIds: number[] }) => void;
-  busy: boolean;
-  error?: string;
-  archivedData: any;
-  onRestore: (entityType: any, item: any) => void;
-  restoreBusy: boolean;
-}) {
-  const [openCleanup, setOpenCleanup] = useState(false);
-  const [projectIds, setProjectIds] = useState<string[]>([]);
-  const [stageIds, setStageIds] = useState<string[]>([]);
-  const [taskIds, setTaskIds] = useState<string[]>([]);
-
-  const choose = (event: React.ChangeEvent<HTMLSelectElement>, setValues: (values: string[]) => void) =>
-    setValues(Array.from(event.target.selectedOptions, option => option.value));
-
-  const activeProjects = projects.filter(item => item.status === "active");
-  const activeStages = stages.filter(item => item.status !== "archived");
-  const activeTasks = tasks.filter(item => item.status !== "cancelled");
-  const selectedCount = projectIds.length + stageIds.length + taskIds.length;
-
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white/80 p-2 sm:p-3 text-xs">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setOpenCleanup(!openCleanup)}
-            className="flex items-center gap-1 font-bold text-slate-800 hover:text-emerald-800 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors"
-          >
-            <Archive className="h-3.5 w-3.5 text-amber-600" />
-            <span>선택 항목 일괄 보관</span>
-            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${openCleanup ? "rotate-180" : ""}`} />
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <WorkspaceExportPanel />
-        </div>
-      </div>
-
-      {openCleanup && (
-        <div className="mt-3 border-t border-slate-100 pt-3">
-          <div className="grid gap-2 sm:grid-cols-3">
-            <label className="font-bold text-slate-800">
-              Project ({activeProjects.length})
-              <select
-                multiple
-                value={projectIds}
-                onChange={event => choose(event, setProjectIds)}
-                className="mono-input mt-1 h-20 w-full p-1.5 text-xs font-medium"
-              >
-                {activeProjects.map(item => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="font-bold text-slate-800">
-              Stage ({activeStages.length})
-              <select
-                multiple
-                value={stageIds}
-                onChange={event => choose(event, setStageIds)}
-                className="mono-input mt-1 h-20 w-full p-1.5 text-xs font-medium"
-              >
-                {activeStages.map(item => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="font-bold text-slate-800">
-              Task ({activeTasks.length})
-              <select
-                multiple
-                value={taskIds}
-                onChange={event => choose(event, setTaskIds)}
-                className="mono-input mt-1 h-20 w-full p-1.5 text-xs font-medium"
-              >
-                {activeTasks.map(item => (
-                  <option key={item.id} value={item.id}>
-                    {item.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="mt-2.5 flex items-center justify-between">
-            <span className="font-semibold text-slate-600">
-              {selectedCount ? `${selectedCount}개 선택됨` : "보관할 항목을 다중 선택하세요."}
-            </span>
-            <button
-              type="button"
-              onClick={() =>
-                onArchive({
-                  projectIds: projectIds.map(Number),
-                  stageIds: stageIds.map(Number),
-                  taskIds: taskIds.map(Number),
-                })
-              }
-              disabled={!selectedCount || busy}
-              className="pressable rounded-lg bg-amber-600 px-3 py-1.5 font-bold text-white hover:bg-amber-700 disabled:opacity-40"
-            >
-              {busy ? "보관 중..." : "선택 항목 보관 실행"}
-            </button>
-          </div>
-          {error && <p className="mt-1 font-bold text-rose-600">{error}</p>}
-        </div>
-      )}
-
-      <div className="mt-1">
-        <ArchivedWorkspacePanel data={archivedData} onRestore={onRestore} busy={restoreBusy} />
-      </div>
-    </div>
-  );
-}
-
-{/* 초슬림 & 공간 극대화 프로젝트 블록 */}
-function CompactProjectBlock({
+{/* 미니 간트 차트가 결합된 초슬림 프로젝트 카드 */}
+function GanttProjectCard({
   project,
   stages,
   tasksByStage,
@@ -261,7 +226,7 @@ function CompactProjectBlock({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(project.title);
   const [description, setDescription] = useState(project.description ?? "");
-  const [conflict, setConflict] = useState(false);
+  const [selectedStageId, setSelectedStageId] = useState<number | null>(null);
 
   const createStage = trpc.workspace.createStage.useMutation({
     onSuccess: () => {
@@ -271,19 +236,13 @@ function CompactProjectBlock({
   });
   const updateProject = trpc.workspace.updateProject.useMutation({
     onSuccess: () => {
-      setConflict(false);
       setEditing(false);
-      void utils.workspace.overview.invalidate();
-    },
-    onError: error => {
-      if (isConflict(error)) setConflict(true);
-      else toast.error(error.message);
       void utils.workspace.overview.invalidate();
     },
   });
 
   const progress = getProjectProgress(project.id, tasks, todayTaskIds);
-  const nextStage = getProjectNextStage(stages, tasksByStage);
+  const activeStages = stages.filter(s => s.status !== "archived");
 
   const saveProject = () =>
     updateProject.mutate({
@@ -294,41 +253,40 @@ function CompactProjectBlock({
     });
 
   return (
-    <section className="rounded-2xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden">
-      {/* 1. 슬림 프로젝트 헤더 (제목 + 인라인 진행률 + 액션) */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <h2 className="text-xl font-black text-slate-950 truncate">{project.title}</h2>
+    <section className="rounded-xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
+      {/* 1. 헤더 (프로젝트명 + 슬림 진행률 + 액션) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <h2 className="text-base font-black text-slate-950 truncate">{project.title}</h2>
           {project.description && (
-            <span className="text-xs font-semibold text-slate-500 truncate hidden sm:inline">
+            <span className="text-[11px] font-semibold text-slate-500 truncate hidden sm:inline">
               · {project.description}
             </span>
           )}
-          {/* 인라인 슬림 프로그레스 */}
-          <div className="flex items-center gap-2 bg-white border border-slate-200 px-2.5 py-1 rounded-full text-xs font-bold text-slate-800 shrink-0">
+          {/* 인라인 미니 진행 바 */}
+          <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2 py-0.5 rounded-full text-xs font-bold text-slate-800 shrink-0">
             <span>{progress.completed}/{progress.total}</span>
-            <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+            <div className="w-14 h-1.5 bg-slate-200 rounded-full overflow-hidden">
               <div className="h-full bg-emerald-600" style={{ width: `${progress.percent}%` }} />
             </div>
-            <span className="text-emerald-800 font-extrabold">{progress.percent}%</span>
+            <span className="text-emerald-800 font-extrabold text-[11px]">{progress.percent}%</span>
           </div>
         </div>
 
-        {/* 액션 버튼 */}
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={() => setEditing(!editing)}
-            className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-200/60"
-            aria-label={`${project.title} 수정`}
+            className="p-1 text-slate-400 hover:text-slate-800 rounded hover:bg-slate-200/50"
+            title="프로젝트 수정"
           >
-            <Pencil className="h-4 w-4" />
+            <Pencil className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={onArchive}
-            className="p-1.5 text-slate-500 hover:text-rose-700 rounded-lg hover:bg-rose-50"
-            aria-label={`${project.title} 보관`}
+            className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50"
+            title="프로젝트 보관"
           >
-            <Archive className="h-4 w-4" />
+            <Archive className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -340,37 +298,78 @@ function CompactProjectBlock({
             event.preventDefault();
             if (title.trim()) saveProject();
           }}
-          className="border-b border-slate-200 bg-amber-50/50 p-4 grid gap-2"
+          className="border-b border-slate-200 bg-amber-50/50 p-2.5 grid gap-1.5"
         >
           <input
             value={title}
             onChange={event => setTitle(event.target.value)}
-            className="mono-input h-10 text-sm font-bold"
+            className="mono-input h-8 text-xs font-bold"
             placeholder="Project 이름"
           />
-          <textarea
+          <input
             value={description}
             onChange={event => setDescription(event.target.value)}
-            className="mono-input min-h-16 text-sm"
+            className="mono-input h-8 text-xs"
             placeholder="Project 설명 (선택)"
           />
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setEditing(false)} className="px-3 py-1.5 text-xs font-bold text-slate-600">
+          <div className="flex justify-end gap-1.5">
+            <button type="button" onClick={() => setEditing(false)} className="px-2 py-1 text-xs font-bold text-slate-600">
               취소
             </button>
-            <button className="rounded-lg bg-emerald-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-800">
-              저장
-            </button>
+            <button className="rounded bg-emerald-700 px-3 py-1 text-xs font-bold text-white">저장</button>
           </div>
         </form>
       )}
 
-      {/* 2. Stage 및 Task 목록 (초간편 인라인 구조) */}
-      <div className="p-3 sm:p-4 space-y-3">
-        {stages.filter(stage => stage.status !== "archived").length ? (
-          <div className="space-y-3">
-            {stages
-              .filter(stage => stage.status !== "archived")
+      {/* 2. 🌟 소형 간트 차트 타임라인 바 (Mini Gantt Roadmap Bar) */}
+      {activeStages.length > 0 && (
+        <div className="border-b border-slate-100 bg-slate-50/40 px-3 py-1.5">
+          <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-xs scrollbar-none">
+            <span className="text-[10px] font-extrabold uppercase text-slate-500 mr-1 shrink-0 flex items-center gap-1">
+              <Layers className="h-3 w-3" /> 로드맵
+            </span>
+            {activeStages.map((stage, idx) => {
+              const stageTasks = tasksByStage.get(stage.id) ?? [];
+              const doneCount = stageTasks.filter(t => t.status === "done").length;
+              const totalCount = stageTasks.length;
+              const isAllDone = totalCount > 0 && doneCount === totalCount;
+              const isSelected = selectedStageId === stage.id;
+
+              return (
+                <div key={stage.id} className="flex items-center shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStageId(isSelected ? null : stage.id)}
+                    className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 font-bold transition-all border ${
+                      isAllDone
+                        ? "bg-emerald-100/70 border-emerald-300 text-emerald-900"
+                        : totalCount > 0
+                        ? "bg-white border-slate-300 text-slate-900 shadow-2xs"
+                        : "bg-slate-100 border-slate-200 text-slate-500"
+                    } ${isSelected ? "ring-2 ring-emerald-600" : ""}`}
+                  >
+                    <span className="text-[10px]">{isAllDone ? "✓" : `${idx + 1}.`}</span>
+                    <span className="truncate max-w-28">{stage.title}</span>
+                    <span className="text-[10px] opacity-75">
+                      ({doneCount}/{totalCount})
+                    </span>
+                  </button>
+                  {idx < activeStages.length - 1 && (
+                    <span className="text-slate-300 px-1 font-bold">›</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Stage 및 Task 목록 (극도로 컴팩트한 구조) */}
+      <div className="p-2.5 sm:p-3 space-y-2">
+        {activeStages.length ? (
+          <div className="space-y-2">
+            {activeStages
+              .filter(stage => selectedStageId === null || selectedStageId === stage.id)
               .map(stage => (
                 <CompactStageBlock
                   key={stage.id}
@@ -383,28 +382,28 @@ function CompactProjectBlock({
               ))}
           </div>
         ) : (
-          <p className="rounded-xl border border-dashed border-slate-200 p-3 text-center text-xs font-bold text-slate-500">
-            아직 Stage가 없습니다. 아래에서 Stage를 먼저 추가하세요.
+          <p className="rounded-lg border border-dashed border-slate-200 p-2 text-center text-xs font-semibold text-slate-500">
+            아직 Stage가 없습니다. 아래에서 단계(예: 기획, 개발, 출시)를 추가하세요.
           </p>
         )}
 
-        {/* 컴팩트 Stage 추가 인풋 */}
+        {/* 1줄 인라인 Stage 추가 폼 */}
         <form
           onSubmit={event => {
             event.preventDefault();
             if (stageTitle.trim()) createStage.mutate({ projectId: project.id, title: stageTitle.trim() });
           }}
-          className="flex gap-2 pt-1"
+          className="flex gap-1.5 pt-0.5"
         >
           <input
             value={stageTitle}
             onChange={event => setStageTitle(event.target.value)}
-            className="mono-input h-9 text-xs font-semibold flex-1 bg-slate-50"
-            placeholder="+ 새 Stage 이름 추가 (예: 기획, 개발, 테스트...)"
+            className="mono-input h-8 text-xs font-semibold flex-1 bg-slate-50 border-dashed"
+            placeholder="+ 새 Stage 단계 추가 (예: 기획, 디자인, 구현...)"
           />
           <button
             disabled={!stageTitle.trim() || createStage.isPending}
-            className="pressable h-9 shrink-0 rounded-xl bg-slate-200 px-3 text-xs font-bold text-slate-800 hover:bg-slate-300 disabled:opacity-40"
+            className="pressable h-8 shrink-0 rounded-lg bg-slate-100 border border-slate-200 px-2.5 text-xs font-bold text-slate-800 hover:bg-slate-200 disabled:opacity-40"
           >
             + Stage 추가
           </button>
@@ -414,7 +413,7 @@ function CompactProjectBlock({
   );
 }
 
-{/* 초간편 & 초압축 Stage 블록 (Task 입력 초간소화) */}
+{/* 초간편 Stage 블록 (Task 입력 초간소화) */}
 function CompactStageBlock({
   projectId,
   stage,
@@ -473,72 +472,71 @@ function CompactStageBlock({
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-      {/* Stage 타이틀 바 (한 줄 슬림) */}
+    <div className="rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+      {/* Stage 타이틀 바 */}
       <div className="flex items-center justify-between gap-2">
         <button
           onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 font-black text-slate-900 text-sm hover:text-emerald-800 text-left min-w-0"
+          className="flex items-center gap-1.5 font-black text-slate-900 text-xs hover:text-emerald-800 text-left min-w-0"
         >
-          <ChevronRight className={`h-4 w-4 text-slate-500 transition-transform ${open ? "rotate-90" : ""}`} />
+          <ChevronRight className={`h-3.5 w-3.5 text-slate-500 transition-transform ${open ? "rotate-90" : ""}`} />
           <span className="truncate">{stage.title}</span>
-          <span className="rounded-md bg-slate-200 px-1.5 py-0.5 text-[11px] font-bold text-slate-700 shrink-0">
-            {remainingCount ? `남은 Task ${remainingCount}` : "완료됨"}
+          <span className="rounded bg-slate-200 px-1 py-0.2 text-[10px] font-bold text-slate-700 shrink-0">
+            {remainingCount ? `남은 Task ${remainingCount}` : "✓ 완료"}
           </span>
         </button>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0">
           <button
             onClick={() => setEditing(!editing)}
             className="p-1 text-slate-400 hover:text-slate-800"
-            aria-label={`${stage.title} 수정`}
+            title="Stage 이름 수정"
           >
-            <Pencil className="h-3.5 w-3.5" />
+            <Pencil className="h-3 w-3" />
           </button>
           <button
             onClick={() => updateStage.mutate({ id: stage.id, expectedRevision: stage.revision, status: "archived" })}
             className="p-1 text-slate-400 hover:text-rose-600"
-            aria-label={`${stage.title} 보관`}
+            title="Stage 보관"
           >
-            <Archive className="h-3.5 w-3.5" />
+            <Archive className="h-3 w-3" />
           </button>
         </div>
       </div>
 
-      {/* Stage 이름 수정 폼 */}
+      {/* Stage 수정 폼 */}
       {editing && (
         <form
           onSubmit={event => {
             event.preventDefault();
             if (title.trim()) saveStage();
           }}
-          className="flex gap-2 mt-2"
+          className="flex gap-1.5 mt-1.5"
         >
           <input
             value={title}
             onChange={event => setTitle(event.target.value)}
-            className="mono-input h-8 text-xs font-bold flex-1"
+            className="mono-input h-7 text-xs font-bold flex-1"
           />
-          <button className="rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white">저장</button>
-          <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-500">
+          <button className="rounded bg-emerald-700 px-2.5 text-xs font-bold text-white">저장</button>
+          <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-500 px-1">
             취소
           </button>
         </form>
       )}
 
-      {/* Task 리스트 & 초간편 1줄 입력창 */}
+      {/* Task 리스트 & 1줄 인라인 생성 */}
       {open && (
-        <div className="mt-2 space-y-1.5 pl-2 sm:pl-3 border-l-2 border-slate-200">
-          {/* 태스크 목록 */}
+        <div className="mt-1.5 space-y-1 pl-2 border-l-2 border-slate-200">
           {tasks
             .filter(task => task.status !== "cancelled")
             .map(task => (
               <CompactTaskLine key={task.id} task={task} onStatus={onTaskStatus} onArchive={onTaskArchive} />
             ))}
 
-          {/* 초간편 태스크 추가 폼 (엔터 치면 즉시 생성) */}
-          <form onSubmit={handleTaskSubmit} className="pt-1.5">
-            <div className="flex gap-1.5 items-center">
+          {/* 초간편 태스크 추가 폼 */}
+          <form onSubmit={handleTaskSubmit} className="pt-1">
+            <div className="flex gap-1 items-center">
               <input
                 value={taskTitle}
                 onChange={event => setTaskTitle(event.target.value)}
@@ -549,22 +547,35 @@ function CompactStageBlock({
                 <button
                   type="button"
                   onClick={() => setShowNextAction(true)}
-                  className="h-8 px-2 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg shrink-0"
+                  className="h-8 px-2 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg shrink-0"
+                  title="지금 당장 시작할 다음 행동 메모 추가"
                 >
                   + 다음 행동
                 </button>
               ) : (
-                <input
-                  value={nextAction}
-                  onChange={event => setNextAction(event.target.value)}
-                  className="mono-input h-8 text-xs font-semibold w-32 sm:w-44 bg-white"
-                  placeholder="다음 행동 입력"
-                />
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <input
+                    value={nextAction}
+                    onChange={event => setNextAction(event.target.value)}
+                    className="mono-input h-8 text-xs font-semibold w-28 sm:w-36 bg-white"
+                    placeholder="다음 행동 입력"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNextAction("");
+                      setShowNextAction(false);
+                    }}
+                    className="p-1 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               )}
               <button
                 type="submit"
                 disabled={!taskTitle.trim() || createTask.isPending}
-                className="pressable h-8 px-3 rounded-lg bg-emerald-700 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-40 shrink-0"
+                className="pressable h-8 px-2.5 rounded-lg bg-emerald-700 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-40 shrink-0"
               >
                 추가
               </button>
@@ -609,8 +620,8 @@ function CompactTaskLine({
   const isDone = task.status === "done";
 
   return (
-    <div className="group flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 border border-slate-100 shadow-2xs hover:border-slate-300 transition-colors">
-      <div className="flex items-center gap-2 min-w-0 flex-1">
+    <div className="group relative flex items-center justify-between gap-1.5 rounded-lg bg-white px-2 py-1 border border-slate-100 shadow-2xs hover:border-slate-300 transition-colors">
+      <div className="flex items-center gap-1.5 min-w-0 flex-1">
         <button
           onClick={() => onStatus(task, isDone ? "planned" : "done")}
           className="text-slate-400 hover:text-emerald-700 shrink-0"
@@ -625,29 +636,25 @@ function CompactTaskLine({
           )}
         </button>
 
-        <span
-          className={`text-xs font-bold truncate ${
-            isDone ? "text-slate-400 line-through" : "text-slate-900"
-          }`}
-        >
+        <span className={`text-xs font-bold truncate ${isDone ? "text-slate-400 line-through" : "text-slate-900"}`}>
           {task.title}
         </span>
 
         {task.nextAction && (
-          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded truncate max-w-44 hidden sm:inline">
+          <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1 py-0.2 rounded truncate max-w-40 hidden sm:inline">
             👉 {task.nextAction}
           </span>
         )}
       </div>
 
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
         {task.status !== "in_progress" && !isDone && (
           <button
             onClick={() => onStatus(task, "in_progress")}
             className="p-1 text-slate-400 hover:text-emerald-700"
             title="진행 중으로 변경"
           >
-            <Play className="h-3.5 w-3.5" />
+            <Play className="h-3 w-3" />
           </button>
         )}
         <button
@@ -655,25 +662,25 @@ function CompactTaskLine({
           className="p-1 text-slate-400 hover:text-slate-800"
           title="수정"
         >
-          <Pencil className="h-3.5 w-3.5" />
+          <Pencil className="h-3 w-3" />
         </button>
         <button
           onClick={() => onArchive(task)}
           className="p-1 text-slate-400 hover:text-rose-600"
           title="보관"
         >
-          <Archive className="h-3.5 w-3.5" />
+          <Archive className="h-3 w-3" />
         </button>
       </div>
 
-      {/* 수정 모달/인라인 */}
+      {/* 수정 폼 */}
       {editing && (
         <form
           onSubmit={event => {
             event.preventDefault();
             if (title.trim()) saveTask();
           }}
-          className="absolute inset-x-2 z-10 flex gap-1.5 bg-white p-2 rounded-lg border-2 border-emerald-500 shadow-md"
+          className="absolute inset-x-1 z-10 flex gap-1 bg-white p-1 rounded-lg border-2 border-emerald-600 shadow-md"
         >
           <input
             value={title}
@@ -683,14 +690,141 @@ function CompactTaskLine({
           <input
             value={nextAction}
             onChange={event => setNextAction(event.target.value)}
-            className="mono-input h-7 text-xs w-32"
+            className="mono-input h-7 text-xs w-28"
             placeholder="다음 행동"
           />
-          <button className="rounded bg-emerald-700 px-2.5 text-xs font-bold text-white">저장</button>
+          <button className="rounded bg-emerald-700 px-2 text-xs font-bold text-white">저장</button>
           <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-500 px-1">
-            <X className="h-3.5 w-3.5" />
+            <X className="h-3 w-3" />
           </button>
         </form>
+      )}
+    </div>
+  );
+}
+
+{/* 접이식 컴팩트 툴바 */}
+function CompactTools({
+  projects,
+  stages,
+  tasks,
+  onArchive,
+  busy,
+  error,
+  archivedData,
+  onRestore,
+  restoreBusy,
+}: {
+  projects: ProjectItem[];
+  stages: StageItem[];
+  tasks: TaskItem[];
+  onArchive: (values: { projectIds: number[]; stageIds: number[]; taskIds: number[] }) => void;
+  busy: boolean;
+  error?: string;
+  archivedData: any;
+  onRestore: (entityType: any, item: any) => void;
+  restoreBusy: boolean;
+}) {
+  const [openCleanup, setOpenCleanup] = useState(false);
+  const [projectIds, setProjectIds] = useState<string[]>([]);
+  const [stageIds, setStageIds] = useState<string[]>([]);
+  const [taskIds, setTaskIds] = useState<string[]>([]);
+
+  const choose = (event: React.ChangeEvent<HTMLSelectElement>, setValues: (values: string[]) => void) =>
+    setValues(Array.from(event.target.selectedOptions, option => option.value));
+
+  const activeProjects = projects.filter(item => item.status === "active");
+  const activeStages = stages.filter(item => item.status !== "archived");
+  const activeTasks = tasks.filter(item => item.status !== "cancelled");
+  const selectedCount = projectIds.length + stageIds.length + taskIds.length;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white/80 p-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          onClick={() => setOpenCleanup(!openCleanup)}
+          className="flex items-center gap-1 font-bold text-slate-800 hover:text-emerald-800 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-lg transition-colors"
+        >
+          <Archive className="h-3.5 w-3.5 text-amber-600" />
+          <span>보관함 및 일괄 관리</span>
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${openCleanup ? "rotate-180" : ""}`} />
+        </button>
+        <WorkspaceExportPanel />
+      </div>
+
+      {openCleanup && (
+        <div className="mt-2.5 border-t border-slate-100 pt-2.5 space-y-2">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="font-bold text-slate-800">
+              Project ({activeProjects.length})
+              <select
+                multiple
+                value={projectIds}
+                onChange={event => choose(event, setProjectIds)}
+                className="mono-input mt-1 h-16 w-full p-1 text-xs"
+              >
+                {activeProjects.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="font-bold text-slate-800">
+              Stage ({activeStages.length})
+              <select
+                multiple
+                value={stageIds}
+                onChange={event => choose(event, setStageIds)}
+                className="mono-input mt-1 h-16 w-full p-1 text-xs"
+              >
+                {activeStages.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="font-bold text-slate-800">
+              Task ({activeTasks.length})
+              <select
+                multiple
+                value={taskIds}
+                onChange={event => choose(event, setTaskIds)}
+                className="mono-input mt-1 h-16 w-full p-1 text-xs"
+              >
+                {activeTasks.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-slate-600">
+              {selectedCount ? `${selectedCount}개 선택됨` : "보관할 항목을 다중 선택하세요."}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                onArchive({
+                  projectIds: projectIds.map(Number),
+                  stageIds: stageIds.map(Number),
+                  taskIds: taskIds.map(Number),
+                })
+              }
+              disabled={!selectedCount || busy}
+              className="pressable rounded-lg bg-amber-600 px-3 py-1 font-bold text-white hover:bg-amber-700 disabled:opacity-40"
+            >
+              {busy ? "보관 중..." : "선택 항목 보관"}
+            </button>
+          </div>
+          {error && <p className="mt-1 font-bold text-rose-600">{error}</p>}
+          <div className="mt-1 border-t border-slate-100 pt-1">
+            <ArchivedWorkspacePanel data={archivedData} onRestore={onRestore} busy={restoreBusy} />
+          </div>
+        </div>
       )}
     </div>
   );
