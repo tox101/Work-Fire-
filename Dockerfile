@@ -21,4 +21,4 @@ ENV PORT=3000
 EXPOSE 3000
 
 # 실행 명령어
-CMD ["sh", "-c", "pnpm drizzle-kit migrate && node dist/index.js"]
+CMD ["sh", "-c", "pnpm drizzle-kit migrate || true; node dist/index.js"]
