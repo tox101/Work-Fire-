@@ -1,0 +1,126 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+}
+
+@theme {
+  --color-violet-50: #f2faf3;
+  --color-violet-100: #dcf0df;
+  --color-violet-200: #bee3c4;
+  --color-violet-300: #95cd9e;
+  --color-violet-400: #6bb179;
+  --color-violet-500: #4d9560;
+  --color-violet-600: #397a4b;
+  --color-violet-700: #2d633d;
+  --color-violet-800: #245033;
+  --color-violet-900: #1b4028;
+  --color-violet-950: #153521;
+}
+
+:root {
+  --background: oklch(0.978 0.011 82);
+  --foreground: oklch(0.31 0.03 151);
+  --card: oklch(0.995 0.006 82);
+  --card-foreground: oklch(0.31 0.03 151);
+  --popover: oklch(0.995 0.006 82);
+  --popover-foreground: oklch(0.31 0.03 151);
+  --primary: oklch(0.57 0.09 151);
+  --primary-foreground: oklch(0.99 0.008 82);
+  --secondary: oklch(0.91 0.03 150);
+  --secondary-foreground: oklch(0.34 0.04 150);
+  --muted: oklch(0.95 0.018 82);
+  --muted-foreground: oklch(0.5 0.03 151);
+  --accent: oklch(0.88 0.055 151);
+  --accent-foreground: oklch(0.31 0.04 164);
+  --destructive: oklch(0.52 0.08 22);
+  --border: oklch(0.85 0.018 150);
+  --input: oklch(0.85 0.018 150);
+  --ring: oklch(0.57 0.09 151);
+}
+
+* { border-color: var(--border); }
+
+html { background: #f8fbf7; }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 1% 2%, rgba(204, 232, 211, .54), transparent 25%),
+    radial-gradient(circle at 96% 12%, rgba(223, 241, 226, .68), transparent 25%),
+    #f8fbf7;
+  color: #25452f;
+  font-family: Pretendard, "Noto Sans KR", Inter, Arial, sans-serif;
+  text-rendering: geometricPrecision;
+}
+
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, a:focus-visible { outline: 2px solid #4d9560; outline-offset: 3px; }
+
+.industrial-title {
+  font-family: Pretendard, "Noto Sans KR", Inter, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+
+.industrial-label {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.mono-input {
+  width: 100%;
+  border: 1px solid #cfe0d2;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .86);
+  padding: 10px 12px;
+  color: #25452f;
+  outline: none;
+  transition: box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms cubic-bezier(0.23, 1, 0.32, 1), background 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.mono-input:focus { border-color: #4d9560; box-shadow: 0 0 0 3px rgba(77, 149, 96, .14); background: #fff; }
+.mono-input:focus-visible { outline: 2px solid #4d9560; outline-offset: 2px; }
+.mono-input::placeholder { color: #78927f; }
+
+.block-shadow { border-radius: 18px; box-shadow: 0 8px 20px rgba(45, 99, 61, .09); }
+.block-shadow-sm { border-radius: 12px; box-shadow: 0 5px 12px rgba(45, 99, 61, .07); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .pressable { transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+  .pressable:active { transform: translateY(1px) scale(.99); }
+}
+
+@media (max-width: 640px) {
+  .industrial-title { letter-spacing: -0.065em; line-height: 1.1; }
+}

@@ -1,0 +1,48 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: personal_work_os
+      MYSQL_USER: workos
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build:
+      context: ..
+      dockerfile: selfhost/Dockerfile
+      args:
+        VITE_AUTH_MODE: local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      AUTH_MODE: local
+      VITE_AUTH_MODE: local
+      LOCAL_ADMIN_OPEN_ID: local-owner
+      LOCAL_ADMIN_NAME: ${LOCAL_ADMIN_NAME:-개인 사용자}
+      LOCAL_ADMIN_PASSWORD: ${LOCAL_ADMIN_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: mysql://workos:${MYSQL_PASSWORD}@db:3306/personal_work_os
+      STORAGE_MODE: local
+      LOCAL_STORAGE_DIR: /app/data/uploads
+    command: sh -c "pnpm drizzle-kit migrate && node dist/index.js"
+    volumes:
+      - uploads_data:/app/data/uploads
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+volumes:
+  mysql_data:
+  uploads_data:

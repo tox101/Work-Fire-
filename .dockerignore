@@ -1,0 +1,10 @@
+.git
+.manus
+.manus-logs
+node_modules
+dist
+coverage
+.env
+selfhost/.env
+backups
+*.log

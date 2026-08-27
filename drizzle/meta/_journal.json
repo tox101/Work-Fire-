@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1787721579464,
+      "tag": "0000_woozy_zemo",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1787721819161,
+      "tag": "0001_strong_raider",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787729809659,
+      "tag": "0002_watery_sue_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1787742721265,
+      "tag": "0003_glamorous_midnight",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1787744603265,
+      "tag": "0004_shallow_dagger",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1787792524638,
+      "tag": "0005_modern_moira_mactaggert",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787793668337,
+      "tag": "0006_aspiring_mathemanic",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787799980287,
+      "tag": "0007_sticky_dreaming_celestial",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1787800988818,
+      "tag": "0008_sticky_swordsman",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1787801663789,
+      "tag": "0009_yummy_pretty_boy",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+import React from "react";
+
+export function ConflictResolutionNotice({ entityLabel, latest, proposed, onRetry, onDismiss }: { entityLabel: string; latest: string; proposed: string; onRetry: () => void; onDismiss: () => void }) {
+  return <section aria-label={`${entityLabel} 동기화 충돌`} role="alert" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><p className="font-bold">다른 기기 변경을 확인했습니다.</p><dl className="mt-2 grid gap-1 leading-5"><div><dt className="inline font-bold">최신 저장값: </dt><dd className="inline">{latest}</dd></div><div><dt className="inline font-bold">내 변경: </dt><dd className="inline">{proposed}</dd></div></dl><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={onRetry} className="pressable rounded-md bg-amber-500 px-2.5 py-1.5 font-bold text-white hover:bg-amber-600">내 변경 다시 적용</button><button type="button" onClick={onDismiss} className="pressable rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-bold text-amber-800 hover:bg-amber-100">최신값 유지</button></div></section>;
+}

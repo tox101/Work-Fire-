@@ -1,0 +1,10 @@
+{
+  "name": "일정열정",
+  "short_name": "일정열정",
+  "description": "Project, Task, Schedule, Record를 연결하는 개인 작업 운영 시스템",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fbf6",
+  "theme_color": "#4f9d69",
+  "icons": [{ "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

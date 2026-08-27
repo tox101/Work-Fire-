@@ -1,0 +1,1 @@
+ALTER TABLE `histories` MODIFY COLUMN `eventType` enum('created','updated','started','completed','on_hold','archived','restored','linked') NOT NULL;
