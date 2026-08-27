@@ -863,54 +863,56 @@ function CompactTaskLine({
         </button>
       </div>
 
-      {/* 🌟 날짜/시간 및 집중 시간 설정 간이 모달 (1h, 1.5h, 30m) */}
+      {/* 🌟 날짜/시간 및 집중 시간 설정 중앙 모달 (1h, 1.5h, 30m) */}
       {showScheduleModal && (
-        <div className="absolute inset-x-1 z-20 flex flex-col gap-1.5 bg-sky-50 p-2 rounded-lg border-2 border-sky-500 shadow-md text-xs">
-          <div className="flex items-center justify-between">
-            <span className="font-black text-sky-950 text-xs">📅 날짜/시간 & 집중 시간 설정</span>
-            <button type="button" onClick={() => setShowScheduleModal(false)} className="text-slate-500 p-0.5">
-              <X className="h-3.5 w-3.5" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-md flex flex-col gap-2.5 bg-white p-4 sm:p-5 rounded-2xl border-2 border-sky-600 shadow-2xl text-xs">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="font-black text-slate-950 text-sm">📅 날짜/시간 & 집중 시간 설정</span>
+              <button type="button" onClick={() => setShowScheduleModal(false)} className="text-slate-400 hover:text-slate-700 p-0.5">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="mono-input h-8 text-xs flex-1 px-2 font-semibold" />
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} className="mono-input h-8 text-xs w-24 px-2 font-semibold" />
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 p-2 rounded-xl border border-slate-200">
+              <span className="text-[10px] font-bold text-slate-700">예상:</span>
+              <input
+                type="text"
+                value={durationInput}
+                onChange={e => setDurationInput(e.target.value)}
+                placeholder="1.5h"
+                className="mono-input h-7 text-xs w-18 px-1.5 text-center font-bold"
+                title="예: 1h, 1.5h, 30m 등"
+              />
+              <span className="text-slate-400 font-bold">−</span>
+              <span className="text-[10px] font-bold text-slate-700">휴식:</span>
+              <input
+                type="text"
+                value={breakInput}
+                onChange={e => setBreakInput(e.target.value)}
+                placeholder="0m"
+                className="mono-input h-7 text-xs w-14 px-1.5 text-center font-bold"
+                title="예: 0m, 15m 등"
+              />
+              <span className="text-slate-400 font-bold">=</span>
+              <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 border border-emerald-300 rounded px-2 py-0.5">
+                총 {formatMinutesToHuman(netFocusMin)} ({netFocusMin}분) 집중
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onScheduleCreate(task, date, time, durationMin, breakMin);
+                setShowScheduleModal(false);
+              }}
+              className="rounded-xl bg-sky-700 py-2.5 text-xs font-black text-white hover:bg-sky-800 shadow-sm mt-1"
+            >
+              Today 일정에 등록하기
             </button>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="mono-input h-7 text-xs w-30 px-1" />
-            <input type="time" value={time} onChange={e => setTime(e.target.value)} className="mono-input h-7 text-xs w-20 px-1" />
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 bg-white p-1.5 rounded border border-sky-200">
-            <span className="text-[10px] font-bold text-slate-600">예상:</span>
-            <input
-              type="text"
-              value={durationInput}
-              onChange={e => setDurationInput(e.target.value)}
-              placeholder="1.5h"
-              className="mono-input h-6 text-xs w-16 px-1.5 text-center font-bold"
-              title="예: 1h, 1.5h, 30m 등"
-            />
-            <span className="text-slate-400 font-bold">−</span>
-            <span className="text-[10px] font-bold text-slate-600">휴식:</span>
-            <input
-              type="text"
-              value={breakInput}
-              onChange={e => setBreakInput(e.target.value)}
-              placeholder="0m"
-              className="mono-input h-6 text-xs w-14 px-1.5 text-center font-bold"
-              title="예: 0m, 15m 등"
-            />
-            <span className="text-slate-400 font-bold">=</span>
-            <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.2">
-              {formatMinutesToHuman(netFocusMin)} ({netFocusMin}분) 집중
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              onScheduleCreate(task, date, time, durationMin, breakMin);
-              setShowScheduleModal(false);
-            }}
-            className="rounded bg-sky-700 py-1 text-xs font-black text-white hover:bg-sky-800 mt-0.5"
-          >
-            Today 일정에 등록하기
-          </button>
         </div>
       )}
 

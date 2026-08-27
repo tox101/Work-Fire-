@@ -564,17 +564,18 @@ function SmartScheduleComposer({
   };
 
   return (
-    <section
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-x-3 bottom-20 z-50 mx-auto max-w-md rounded-2xl border-2 border-emerald-600 bg-white p-4 shadow-2xl md:bottom-8 text-xs"
-    >
-      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-        <h3 className="text-sm font-black text-slate-900">{schedule ? "일정 수정" : "새 일정 등록"}</h3>
-        <button onClick={onCancel} className="text-slate-400 hover:text-slate-700">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in">
+      <section
+        role="dialog"
+        aria-modal="true"
+        className="w-full max-w-md rounded-2xl border-2 border-emerald-600 bg-white p-4 sm:p-5 shadow-2xl text-xs"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+          <h3 className="text-sm font-black text-slate-900">{schedule ? "일정 수정" : "새 일정 등록"}</h3>
+          <button onClick={onCancel} className="text-slate-400 hover:text-slate-700">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
       {/* 1. 카테고리 3종 탭 (프로젝트 vs 일상 vs 긴급) */}
       <div className="mt-2.5 grid grid-cols-3 gap-1.5">
@@ -704,6 +705,7 @@ function SmartScheduleComposer({
       >
         {busy ? "저장 중..." : schedule ? "일정 수정 완료" : "오늘 일정 등록"}
       </button>
-    </section>
+      </section>
+    </div>
   );
 }
