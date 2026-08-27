@@ -6,16 +6,13 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
-  Clock,
   FolderPlus,
   HelpCircle,
   Layers,
   Pencil,
   Play,
   Plus,
-  Sparkles,
   SquareStack,
-  Trash2,
   X,
 } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";

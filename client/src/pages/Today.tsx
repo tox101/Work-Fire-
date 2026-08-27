@@ -1,28 +1,22 @@
 import {
-  Calendar,
   Check,
   Circle,
-  Clock,
   Clock3,
   Coffee,
-  Flame,
   Pause,
   Pencil,
   Play,
   Plus,
-  Sparkles,
   SquarePen,
-  Trash2,
   Wrench,
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { CapturePanel } from "@/components/CapturePanel";
-import { ConflictResolutionNotice } from "@/components/ConflictResolutionNotice";
 import { PinnedRecordSummary, RecentCaptureSummary, SuggestedTaskSummary, WeeklySummary } from "@/components/WorkspaceInsights";
-import { getContinueItem, getNowItem, getSuggestedTask, getTodayProgress, groupRecordsByDay } from "@/lib/workspaceSummary";
+import { getSuggestedTask } from "@/lib/workspaceSummary";
 import { trpc } from "@/lib/trpc";
 
 type ScheduleCategory = "project" | "daily" | "urgent";
@@ -104,15 +98,17 @@ export default function Today() {
   const projectById = useMemo(() => new Map(data?.projects.map(p => [p.id, p]) ?? []), [data?.projects]);
   const stageById = useMemo(() => new Map(data?.stages.map(s => [s.id, s]) ?? []), [data?.stages]);
   const taskById = useMemo(() => new Map(data?.tasks.map(t => [t.id, t]) ?? []), [data?.tasks]);
-  const recordsByDay = useMemo(() => groupRecordsByDay(data?.records ?? []), [data?.records]);
-  const latestRecord = recordsByDay.find(group => group.records.length > 0)?.records[0];
+  // 최신 기록 (records가 있으면 첫번째 아이템)
+  const latestRecord = data?.records?.[0] ?? null;
 
-  const now = data?.tasks ? getNowItem(data.tasks) : null;
+  // 현재 진행 중 task (in_progress)
+  const nowTask = useMemo(() => data?.tasks?.find(t => t.status === "in_progress") ?? null, [data?.tasks]);
   const continueItem = continueContext.data;
   const suggestedTask = data?.tasks ? getSuggestedTask(data.tasks) : null;
-  const linkedTask = now?.taskId ? taskById.get(now.taskId) : continueItem?.task;
-  const linkedProject = linkedTask?.projectId ? projectById.get(linkedTask.projectId) : continueItem?.project;
-  const linkedStage = linkedTask?.stageId ? stageById.get(linkedTask.stageId) : continueItem?.stage;
+  // nowTask 우선, 없으면 continueContext의 task
+  const linkedTask = nowTask ?? (continueItem?.task ? taskById.get(continueItem.task.id) ?? continueItem.task : null);
+  const linkedProject = linkedTask?.projectId ? projectById.get(linkedTask.projectId) : (continueItem?.project ?? null);
+  const linkedStage = linkedTask?.stageId ? stageById.get(linkedTask.stageId) : (continueItem?.stage ?? null);
   const suggestedProject = suggestedTask?.projectId ? projectById.get(suggestedTask.projectId) : null;
 
   return (
@@ -133,7 +129,7 @@ export default function Today() {
         <div className="rounded-xl border-2 border-emerald-600 bg-emerald-700 p-4 text-white shadow-sm">
           <div className="flex items-center justify-between border-b border-emerald-500/60 pb-2">
             <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-100">
-              {now ? "● NOW / 지금 진행 중" : "▶ CONTINUE / 이어서 하기"}
+              {nowTask ? "● NOW / 지금 진행 중" : "▶ CONTINUE / 이어서 하기"}
             </span>
             <Clock3 className="h-4 w-4 text-emerald-100" />
           </div>
