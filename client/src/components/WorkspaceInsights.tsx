@@ -116,25 +116,25 @@ export function ReviewMemo({ value, onChange, completedTasks = [], onQuoteTask, 
         onChange={event => onChange(event.target.value)}
         aria-label="월간 회고 메모 내용"
         placeholder="이번 달에 배운 점이나 다음 달에 이어갈 생각을 적어 주세요."
-        className="mono-input mt-2 min-h-20 resize-y text-xs leading-relaxed font-semibold"
+        className="mono-input mt-2 min-h-24 resize-y text-xs leading-relaxed font-semibold"
       />
       {completedTasks.length && onQuoteTask ? (
         <div className="mt-2 flex gap-1.5 items-center">
-          <select value={quoteTaskId} onChange={event => setQuoteTaskId(event.target.value)} aria-label="회고 메모에 인용할 완료 Task" className="mono-input h-7 text-[11px] font-bold flex-1">
+          <select value={quoteTaskId} onChange={event => setQuoteTaskId(event.target.value)} aria-label="회고 메모에 인용할 완료 Task" className="mono-input h-9 text-xs font-bold flex-1">
             <option value="">완료 Task 인용 선택</option>
             {completedTasks.map(task => <option key={task.id} value={String(task.id)}>{task.title}</option>)}
           </select>
-          <button type="button" onClick={addQuote} disabled={!quoteTask} className="pressable shrink-0 rounded bg-slate-100 border border-slate-200 px-2 h-7 text-[11px] font-bold text-slate-800 hover:bg-slate-200 disabled:opacity-40">
+          <button type="button" onClick={addQuote} disabled={!quoteTask} className="pressable shrink-0 rounded-lg bg-slate-100 border border-slate-200 px-3 h-9 text-xs font-bold text-slate-800 hover:bg-slate-200 disabled:opacity-40">
             인용 추가
           </button>
         </div>
       ) : null}
       {errorMessage && <p role="alert" className="mt-1 text-xs font-bold text-rose-600">{errorMessage}</p>}
-      <div className="mt-2 flex items-center justify-between pt-1 border-t border-slate-100">
-        <span className="text-[11px] font-bold text-emerald-800">{saved ? "✓ 저장됨" : "작성 중..."}</span>
+      <div className="mt-2.5 flex items-center justify-between pt-1.5 border-t border-slate-100">
+        <span className="text-xs font-bold text-emerald-800">{saved ? "✓ 저장됨" : "작성 중..."}</span>
         <div className="flex items-center gap-1.5">
-          {saved && onClear && <button type="button" onClick={onClear} disabled={clearing} className="px-2 py-1 text-xs font-bold text-slate-500 hover:text-rose-700">비우기</button>}
-          <button type="button" onClick={onSave} disabled={!value.trim() || saving} className="pressable rounded-lg bg-emerald-700 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
+          {saved && onClear && <button type="button" onClick={onClear} disabled={clearing} className="px-2.5 py-1 text-xs font-bold text-slate-500 hover:text-rose-700">비우기</button>}
+          <button type="button" onClick={onSave} disabled={!value.trim() || saving} className="pressable rounded-lg bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
             {saving ? "저장 중..." : "메모 저장"}
           </button>
         </div>
@@ -145,12 +145,12 @@ export function ReviewMemo({ value, onChange, completedTasks = [], onQuoteTask, 
 
 export function ReviewMonthNavigator({ monthLabel, onPrevious, onNext, nextDisabled }: { monthLabel: string; onPrevious: () => void; onNext: () => void; nextDisabled: boolean }) {
   return (
-    <nav aria-label="Review 기간 이동" className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5 shadow-2xs">
-      <button type="button" onClick={onPrevious} aria-label="이전 달 Review 보기" className="pressable grid h-7 w-7 place-items-center rounded text-slate-700 hover:bg-slate-100">
+    <nav aria-label="Review 기간 이동" className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-2xs">
+      <button type="button" onClick={onPrevious} aria-label="이전 달 Review 보기" className="pressable grid h-8 w-8 place-items-center rounded text-slate-700 hover:bg-slate-100">
         <ChevronLeft className="h-4 w-4" />
       </button>
-      <span aria-live="polite" className="min-w-20 text-center text-xs font-black text-slate-900">{monthLabel}</span>
-      <button type="button" onClick={onNext} aria-label="다음 달 Review 보기" disabled={nextDisabled} className="pressable grid h-7 w-7 place-items-center rounded text-slate-700 hover:bg-slate-100 disabled:opacity-30">
+      <span aria-live="polite" className="min-w-24 text-center text-xs font-black text-slate-900">{monthLabel}</span>
+      <button type="button" onClick={onNext} aria-label="다음 달 Review 보기" disabled={nextDisabled} className="pressable grid h-8 w-8 place-items-center rounded text-slate-700 hover:bg-slate-100 disabled:opacity-30">
         <ChevronRight className="h-4 w-4" />
       </button>
     </nav>
@@ -165,20 +165,20 @@ export function NextMonthTaskDraft({ projects, stages, projectId, stageId, title
         <span className="text-[11px] font-semibold text-slate-500">프로젝트 바로 연결</span>
       </div>
       {projects.length ? (
-        <div className="mt-2 grid gap-1.5">
-          <div className="grid grid-cols-2 gap-1.5">
-            <select value={projectId} onChange={event => onProjectChange(event.target.value)} aria-label="Task 초안 Project" className="mono-input h-8 text-xs font-bold">
+        <div className="mt-2 grid gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <select value={projectId} onChange={event => onProjectChange(event.target.value)} aria-label="Task 초안 Project" className="mono-input h-9 text-xs font-bold">
               <option value="">Project 선택</option>
               {projects.map(project => <option key={project.id} value={String(project.id)}>{project.title}</option>)}
             </select>
-            <select value={stageId} onChange={event => onStageChange(event.target.value)} aria-label="Task 초안 Stage" className="mono-input h-8 text-xs font-bold">
+            <select value={stageId} onChange={event => onStageChange(event.target.value)} aria-label="Task 초안 Stage" className="mono-input h-9 text-xs font-bold">
               <option value="">Stage (선택)</option>
               {stages.map(stage => <option key={stage.id} value={String(stage.id)}>{stage.title}</option>)}
             </select>
           </div>
-          <div className="flex gap-1.5">
-            <input value={title} onChange={event => onTitleChange(event.target.value)} placeholder="다음 달 첫 Task 제목 입력" className="mono-input h-8 text-xs font-bold flex-1" />
-            <button type="button" onClick={onApply} disabled={!projectId || !title.trim() || applying} className="pressable shrink-0 rounded-lg bg-emerald-700 px-3 h-8 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
+          <div className="flex gap-2">
+            <input value={title} onChange={event => onTitleChange(event.target.value)} placeholder="다음 달 첫 Task 제목 입력" className="mono-input h-9 text-xs font-bold flex-1" />
+            <button type="button" onClick={onApply} disabled={!projectId || !title.trim() || applying} className="pressable shrink-0 rounded-lg bg-emerald-700 px-3.5 h-9 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-40">
               {applying ? "생성 중..." : "Task 생성"}
             </button>
           </div>
@@ -205,7 +205,7 @@ export function ProjectTimeDistribution({ items, unassignedDurationSummary }: { 
                 <span className="truncate text-slate-900">{item.title}</span>
                 <span className="font-mono text-emerald-800">{formatMinutes(item.totalMinutes)} ({item.sharePercent}%)</span>
               </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
                 <div className="h-full rounded-full bg-emerald-600" style={{ width: `${item.sharePercent}%` }} />
               </div>
             </li>
@@ -254,11 +254,11 @@ export function CompletedTaskDrilldown({ items }: { items: Array<{ id: number; t
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
         <h2 className="text-sm font-black text-slate-900">완료 Task 상세 ({visibleItems.length}/{items.length})</h2>
         {items.length ? (
-          <div className="flex gap-1.5">
-            <select value={projectFilter} onChange={event => { setProjectFilter(event.target.value); setStageFilter(ALL_COMPLETED_TASKS); }} className="mono-input h-7 text-xs font-bold">
+          <div className="flex gap-2">
+            <select value={projectFilter} onChange={event => { setProjectFilter(event.target.value); setStageFilter(ALL_COMPLETED_TASKS); }} className="mono-input h-9 text-xs font-bold">
               {options.projectOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
-            <select value={stageFilter} onChange={event => setStageFilter(event.target.value)} className="mono-input h-7 text-xs font-bold">
+            <select value={stageFilter} onChange={event => setStageFilter(event.target.value)} className="mono-input h-9 text-xs font-bold">
               <option value={ALL_COMPLETED_TASKS}>전체 Stage</option>
               {stageOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
@@ -268,11 +268,11 @@ export function CompletedTaskDrilldown({ items }: { items: Array<{ id: number; t
       {visibleItems.length ? (
         <ul className="mt-2 space-y-1.5">
           {visibleItems.map(item => (
-            <li key={item.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs font-bold border border-slate-100">
+            <li key={item.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-2 text-xs font-bold border border-slate-100">
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <span className="text-emerald-700 font-black">✓</span>
                 <span className="truncate text-slate-900">{item.title}</span>
-                <span className="text-[10px] text-slate-500 hidden sm:inline">({item.projectTitle ?? "독립"}{item.stageTitle ? ` › ${item.stageTitle}` : ""})</span>
+                <span className="text-[11px] text-slate-500 hidden sm:inline">({item.projectTitle ?? "독립"}{item.stageTitle ? ` › ${item.stageTitle}` : ""})</span>
               </div>
               <span className="font-mono text-slate-600 shrink-0">{item.durationMinutes ? formatMinutes(item.durationMinutes) : "완료"}</span>
             </li>
