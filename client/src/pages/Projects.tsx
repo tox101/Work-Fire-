@@ -158,7 +158,7 @@ export default function Projects() {
             className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700 hover:bg-emerald-50 hover:text-emerald-900"
           >
             <HelpCircle className="h-3.5 w-3.5 text-emerald-700" />
-            <span>세부작업 & 날짜 설정이란?</span>
+            <span>세부작업 & 시간 계산이란?</span>
           </button>
         </div>
         <form onSubmit={submitProject} className="flex gap-1.5 w-full sm:w-auto">
@@ -182,12 +182,12 @@ export default function Projects() {
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 text-xs text-slate-800 shadow-2xs">
           <div className="flex items-start justify-between gap-2">
             <div className="space-y-1">
-              <p className="font-black text-emerald-950 text-sm">💡 세부작업 & 날짜 설정 안내</p>
+              <p className="font-black text-emerald-950 text-sm">💡 세부작업 & 스마트 시간 계산 안내</p>
               <p className="leading-relaxed text-slate-700">
-                1. <strong>세부작업</strong>: 해당 Task를 실행할 때 필요한 구체적인 첫 행동 메모입니다. (예: Task [머티리얼 선택] 👉 세부작업 [텍스쳐 제작 및 적용])
+                1. <strong>세부작업</strong>: Task를 망설임 없이 시작할 수 있는 첫 구체적 행동 메모입니다.
               </p>
               <p className="leading-relaxed text-slate-700">
-                2. <strong>날짜/시간 설정 (📅)</strong>: 특정 날짜나 오늘 몇 시에 할지 지정하면, <strong>Today(오늘의 실행) 화면 타임라인에 자동으로 등록</strong>되어 제시간에 안내됩니다.
+                2. <strong>스마트 시간 계산 (📅)</strong>: <code>예상시간(분) - 휴식시간(분, 기본0) = 순수 집중시간</code>을 자동 계산하여 Today 타임라인에 등록합니다.
               </p>
             </div>
             <button onClick={() => setShowHelp(false)} className="text-slate-400 hover:text-slate-700 p-1">
@@ -229,14 +229,18 @@ export default function Projects() {
                 setTaskStatus.mutate({ id: task.id, expectedRevision: task.revision, status })
               }
               onTaskArchive={task => archiveTask.mutate({ id: task.id, expectedRevision: task.revision })}
-              onScheduleCreate={(task, date, time) => {
+              onScheduleCreate={(task, date, time, duration = 60, breakTime = 0) => {
                 const [hour, minute] = (time || "09:00").split(":").map(Number);
                 const plannedStartAt = date ? new Date(date) : new Date();
                 plannedStartAt.setHours(hour, minute, 0, 0);
+                const plannedEndAt = new Date(plannedStartAt.getTime() + duration * 60 * 1000);
+                const notes = JSON.stringify({ category: "project", duration, breakTime });
                 createSchedule.mutate({
                   title: task.title,
                   taskId: task.id,
                   plannedStartAt,
+                  plannedEndAt,
+                  notes,
                 });
               }}
             />
@@ -271,7 +275,7 @@ function GanttProjectCard({
   onArchive: () => void;
   onTaskStatus: (task: TaskItem, status: TaskStatus) => void;
   onTaskArchive: (task: TaskItem) => void;
-  onScheduleCreate: (task: TaskItem, date: string, time: string) => void;
+  onScheduleCreate: (task: TaskItem, date: string, time: string, duration?: number, breakTime?: number) => void;
 }) {
   const utils = trpc.useUtils();
   const [stageTitle, setStageTitle] = useState("");
@@ -467,7 +471,7 @@ function GanttProjectCard({
   );
 }
 
-{/* 초간편 Stage 블록 (Task 입력 초간소화 + 날짜/세부작업 연동) */}
+{/* 초간편 Stage 블록 (Task 입력 초간소화 + 날짜/시간계산/세부작업 연동) */}
 function CompactStageBlock({
   projectId,
   stage,
@@ -483,7 +487,7 @@ function CompactStageBlock({
   schedulesByTaskId: Map<number, any>;
   onTaskStatus: (task: TaskItem, status: TaskStatus) => void;
   onTaskArchive: (task: TaskItem) => void;
-  onScheduleCreate: (task: TaskItem, date: string, time: string) => void;
+  onScheduleCreate: (task: TaskItem, date: string, time: string, duration?: number, breakTime?: number) => void;
 }) {
   const utils = trpc.useUtils();
   const [taskTitle, setTaskTitle] = useState("");
@@ -492,6 +496,8 @@ function CompactStageBlock({
   const [showDateInput, setShowDateInput] = useState(false);
   const [planDate, setPlanDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [planTime, setPlanTime] = useState("09:00");
+  const [planDuration, setPlanDuration] = useState(60);
+  const [planBreak, setPlanBreak] = useState(0);
   const [open, setOpen] = useState(true);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(stage.title);
@@ -502,7 +508,7 @@ function CompactStageBlock({
       setNextAction("");
       setShowNextAction(false);
       if (showDateInput && created) {
-        onScheduleCreate(created as TaskItem, planDate, planTime);
+        onScheduleCreate(created as TaskItem, planDate, planTime, planDuration, planBreak);
         setShowDateInput(false);
       }
       void utils.workspace.overview.invalidate();
@@ -606,7 +612,7 @@ function CompactStageBlock({
               />
             ))}
 
-          {/* 초간편 태스크 추가 폼 (엔터 1초 입력 + 세부작업 & 날짜 옵션) */}
+          {/* 초간편 태스크 추가 폼 (엔터 1초 입력 + 세부작업 & 날짜/시간계산 옵션) */}
           <form onSubmit={handleTaskSubmit} className="pt-1 space-y-1">
             <div className="flex gap-1 items-center">
               <input
@@ -630,9 +636,9 @@ function CompactStageBlock({
                   type="button"
                   onClick={() => setShowDateInput(true)}
                   className="h-8 px-2 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-lg shrink-0 flex items-center gap-1"
-                  title="날짜/시간 지정"
+                  title="날짜/시간 및 집중 시간 설정"
                 >
-                  <Calendar className="h-3 w-3" /> + 날짜
+                  <Calendar className="h-3 w-3" /> + 날짜/시간
                 </button>
               ) : null}
               <button
@@ -644,7 +650,7 @@ function CompactStageBlock({
               </button>
             </div>
 
-            {/* 세부작업 또는 날짜 인풋 확장 영역 */}
+            {/* 세부작업 또는 날짜/시간계산 인풋 확장 영역 */}
             {(showNextAction || showDateInput) && (
               <div className="flex flex-wrap gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 text-xs">
                 {showNextAction && (
@@ -669,27 +675,65 @@ function CompactStageBlock({
                   </div>
                 )}
                 {showDateInput && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <span className="text-[10px] font-bold text-emerald-700 shrink-0">📅 날짜/시간:</span>
-                    <input
-                      type="date"
-                      value={planDate}
-                      onChange={event => setPlanDate(event.target.value)}
-                      className="mono-input h-7 text-xs w-32 px-1.5"
-                    />
-                    <input
-                      type="time"
-                      value={planTime}
-                      onChange={event => setPlanTime(event.target.value)}
-                      className="mono-input h-7 text-xs w-20 px-1"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowDateInput(false)}
-                      className="p-1 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+                  <div className="w-full space-y-1.5">
+                    {/* 날짜 & 시작 시간 */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-emerald-700 shrink-0">📅 날짜/시간:</span>
+                      <input
+                        type="date"
+                        value={planDate}
+                        onChange={event => setPlanDate(event.target.value)}
+                        className="mono-input h-7 text-xs w-32 px-1.5 font-semibold"
+                      />
+                      <input
+                        type="time"
+                        value={planTime}
+                        onChange={event => setPlanTime(event.target.value)}
+                        className="mono-input h-7 text-xs w-20 px-1 font-semibold"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowDateInput(false)}
+                        className="ml-auto p-1 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+
+                    {/* 🌟 스마트 시간 계산: 예상시간 - 휴식시간 = 총 집중시간 */}
+                    <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 rounded-lg px-2 py-1.5 border border-slate-200">
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-bold text-slate-700">예상시간:</span>
+                        <input
+                          type="number"
+                          min="5"
+                          step="5"
+                          value={planDuration}
+                          onChange={event => setPlanDuration(Number(event.target.value))}
+                          className="mono-input h-6 text-xs w-14 px-1 text-center font-bold"
+                        />
+                        <span className="text-[10px] text-slate-500">분</span>
+                      </div>
+                      <span className="text-slate-400 font-bold text-[11px]">−</span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-bold text-slate-700">휴식:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="5"
+                          value={planBreak}
+                          onChange={event => setPlanBreak(Number(event.target.value))}
+                          className="mono-input h-6 text-xs w-12 px-1 text-center font-bold"
+                        />
+                        <span className="text-[10px] text-slate-500">분</span>
+                      </div>
+                      <span className="text-slate-400 font-bold text-[11px]">=</span>
+                      <div className="flex items-center gap-1 bg-emerald-100 border border-emerald-300 rounded px-2 py-0.5 shrink-0">
+                        <span className="text-[10px] font-black text-emerald-900">
+                          총 {Math.max(0, planDuration - planBreak)}분 집중
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -713,7 +757,7 @@ function CompactTaskLine({
   schedule?: any;
   onStatus: (task: TaskItem, status: TaskStatus) => void;
   onArchive: (task: TaskItem) => void;
-  onScheduleCreate: (task: TaskItem, date: string, time: string) => void;
+  onScheduleCreate: (task: TaskItem, date: string, time: string, duration?: number, breakTime?: number) => void;
 }) {
   const utils = trpc.useUtils();
   const [editing, setEditing] = useState(false);
@@ -722,6 +766,8 @@ function CompactTaskLine({
   const [nextAction, setNextAction] = useState(task.nextAction ?? "");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [time, setTime] = useState("09:00");
+  const [duration, setDuration] = useState(60);
+  const [breakTime, setBreakTime] = useState(0);
 
   const updateTask = trpc.workspace.updateTask.useMutation({
     onSuccess: () => {
@@ -787,7 +833,7 @@ function CompactTaskLine({
             type="button"
             onClick={() => setShowScheduleModal(true)}
             className="p-1 text-slate-400 hover:text-sky-700"
-            title="날짜/시간 설정"
+            title="날짜/시간 & 집중 시간 설정"
           >
             <CalendarPlus className="h-3 w-3" />
           </button>
@@ -809,24 +855,55 @@ function CompactTaskLine({
         </button>
       </div>
 
-      {/* 날짜 설정 간이 모달 */}
+      {/* 🌟 날짜/시간 및 집중 시간 설정 간이 모달 */}
       {showScheduleModal && (
-        <div className="absolute inset-x-1 z-20 flex flex-wrap items-center gap-1.5 bg-sky-50 p-1.5 rounded-lg border-2 border-sky-500 shadow-md text-xs">
-          <span className="font-bold text-sky-950 text-[11px]">📅 날짜/시간 설정:</span>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="mono-input h-6 text-xs w-28 px-1" />
-          <input type="time" value={time} onChange={e => setTime(e.target.value)} className="mono-input h-6 text-xs w-18 px-1" />
+        <div className="absolute inset-x-1 z-20 flex flex-col gap-1.5 bg-sky-50 p-2 rounded-lg border-2 border-sky-500 shadow-md text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-black text-sky-950 text-xs">📅 날짜/시간 & 집중 시간 설정</span>
+            <button type="button" onClick={() => setShowScheduleModal(false)} className="text-slate-500 p-0.5">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="mono-input h-7 text-xs w-30 px-1" />
+            <input type="time" value={time} onChange={e => setTime(e.target.value)} className="mono-input h-7 text-xs w-20 px-1" />
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 bg-white p-1.5 rounded border border-sky-200">
+            <span className="text-[10px] font-bold text-slate-600">예상:</span>
+            <input
+              type="number"
+              min="5"
+              step="5"
+              value={duration}
+              onChange={e => setDuration(Number(e.target.value))}
+              className="mono-input h-6 text-xs w-12 px-1 text-center font-bold"
+            />
+            <span className="text-[10px] text-slate-500">분</span>
+            <span className="text-slate-400 font-bold">−</span>
+            <span className="text-[10px] font-bold text-slate-600">휴식:</span>
+            <input
+              type="number"
+              min="0"
+              step="5"
+              value={breakTime}
+              onChange={e => setBreakTime(Number(e.target.value))}
+              className="mono-input h-6 text-xs w-10 px-1 text-center font-bold"
+            />
+            <span className="text-[10px] text-slate-500">분</span>
+            <span className="text-slate-400 font-bold">=</span>
+            <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.2">
+              {Math.max(0, duration - breakTime)}분 집중
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => {
-              onScheduleCreate(task, date, time);
+              onScheduleCreate(task, date, time, duration, breakTime);
               setShowScheduleModal(false);
             }}
-            className="rounded bg-sky-700 px-2 py-0.5 text-xs font-bold text-white hover:bg-sky-800"
+            className="rounded bg-sky-700 py-1 text-xs font-black text-white hover:bg-sky-800 mt-0.5"
           >
-            등록
-          </button>
-          <button type="button" onClick={() => setShowScheduleModal(false)} className="text-slate-500 p-0.5">
-            <X className="h-3.5 w-3.5" />
+            Today 일정에 등록하기
           </button>
         </div>
       )}
