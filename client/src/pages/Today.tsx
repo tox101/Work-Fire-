@@ -1,4 +1,7 @@
 import {
+  Bell,
+  BellRing,
+  Calendar,
   Check,
   Circle,
   Clock3,
@@ -8,14 +11,18 @@ import {
   Play,
   Plus,
   SquarePen,
+  Volume2,
   Wrench,
   X,
   Zap,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 import { CapturePanel } from "@/components/CapturePanel";
 import { PinnedRecordSummary, RecentCaptureSummary, SuggestedTaskSummary, WeeklySummary } from "@/components/WorkspaceInsights";
+import { playNotificationSound, requestNotificationPermission, sendWebNotification } from "@/lib/notification";
+import { formatMinutesToHuman, parseTimeToMinutes } from "@/lib/timeParser";
 import { getSuggestedTask } from "@/lib/workspaceSummary";
 import { trpc } from "@/lib/trpc";
 
@@ -23,13 +30,6 @@ type ScheduleCategory = "project" | "daily" | "urgent";
 
 function dateHeading() {
   return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(new Date());
-}
-
-function formatMinutes(minutes: number) {
-  if (minutes < 60) return `${minutes}분`;
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return remainder ? `${hours}시간 ${remainder}분` : `${hours}시간`;
 }
 
 function parseScheduleNotes(notes: string | null | undefined): { category: ScheduleCategory; duration: number; breakTime: number } {
@@ -69,8 +69,27 @@ export default function Today() {
 
   const [showCapture, setShowCapture] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [initialCategory, setInitialCategory] = useState<ScheduleCategory>("project");
   const [editingSchedule, setEditingSchedule] = useState<any | null>(null);
-  const [scheduleConflict, setScheduleConflict] = useState(false);
+  const [notifEnabled, setNotifEnabled] = useState(false);
+
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "granted") {
+      setNotifEnabled(true);
+    }
+  }, []);
+
+  const handleToggleNotif = async () => {
+    const granted = await requestNotificationPermission();
+    if (granted) {
+      setNotifEnabled(true);
+      sendWebNotification("일정 알림 활성화", "오늘의 일정 시작 및 집중 타이머 알림이 켜졌습니다!");
+      toast.success("알림이 활성화되었습니다.");
+    } else {
+      playNotificationSound();
+      toast.info("알림 사운드가 재생됩니다.");
+    }
+  };
 
   const invalidate = () => {
     void utils.workspace.overview.invalidate();
@@ -83,6 +102,7 @@ export default function Today() {
     onSuccess: () => {
       setShowSchedule(false);
       invalidate();
+      toast.success("일정을 추가했습니다.");
     },
   });
   const updateSchedule = trpc.workspace.updateSchedule.useMutation({
@@ -90,38 +110,78 @@ export default function Today() {
       setShowSchedule(false);
       setEditingSchedule(null);
       invalidate();
+      toast.success("일정을 수정했습니다.");
     },
   });
-  const setScheduleStatus = trpc.workspace.setScheduleStatus.useMutation({ onSuccess: invalidate });
+  const setScheduleStatus = trpc.workspace.setScheduleStatus.useMutation({
+    onSuccess: (_, variables) => {
+      if (variables.status === "in_progress") {
+        sendWebNotification("작업 시작", "지금 설정한 작업에 집중해 보세요!");
+      } else if (variables.status === "completed") {
+        sendWebNotification("작업 완료 축하!", "오늘의 일정을 하나 멋지게 완료했습니다! 🎉");
+      }
+      invalidate();
+    },
+  });
 
   const data = overview.data;
   const projectById = useMemo(() => new Map(data?.projects.map(p => [p.id, p]) ?? []), [data?.projects]);
   const stageById = useMemo(() => new Map(data?.stages.map(s => [s.id, s]) ?? []), [data?.stages]);
   const taskById = useMemo(() => new Map(data?.tasks.map(t => [t.id, t]) ?? []), [data?.tasks]);
-  // 최신 기록 (records가 있으면 첫번째 아이템)
   const latestRecord = data?.records?.[0] ?? null;
 
-  // 현재 진행 중 task (in_progress)
   const nowTask = useMemo(() => data?.tasks?.find(t => t.status === "in_progress") ?? null, [data?.tasks]);
   const continueItem = continueContext.data;
   const suggestedTask = data?.tasks ? getSuggestedTask(data.tasks) : null;
-  // nowTask 우선, 없으면 continueContext의 task
   const linkedTask = nowTask ?? (continueItem?.task ? taskById.get(continueItem.task.id) ?? continueItem.task : null);
   const linkedProject = linkedTask?.projectId ? projectById.get(linkedTask.projectId) : (continueItem?.project ?? null);
   const linkedStage = linkedTask?.stageId ? stageById.get(linkedTask.stageId) : (continueItem?.stage ?? null);
   const suggestedProject = suggestedTask?.projectId ? projectById.get(suggestedTask.projectId) : null;
 
+  const openNewScheduleModal = (cat: ScheduleCategory = "project") => {
+    setEditingSchedule(null);
+    setInitialCategory(cat);
+    setShowSchedule(true);
+  };
+
   return (
     <div className="space-y-3 max-w-6xl mx-auto pb-16">
-      {/* 1. 컴팩트 헤더 */}
+      {/* 1. 컴팩트 헤더 & 알림 활성화 버튼 */}
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <h1 className="text-2xl font-black text-slate-950">오늘의 실행</h1>
           <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
             {dateHeading()}
           </span>
+          <button
+            onClick={handleToggleNotif}
+            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold transition-colors ${
+              notifEnabled
+                ? "bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+            title="일정 시작/완료 브라우저 알림 및 사운드 설정"
+          >
+            {notifEnabled ? <BellRing className="h-3.5 w-3.5 text-emerald-700" /> : <Bell className="h-3.5 w-3.5 text-slate-500" />}
+            <span>{notifEnabled ? "알림 ON" : "알림 켜기"}</span>
+          </button>
         </div>
-        <p className="text-xs font-semibold text-slate-600 hidden sm:block">작은 일이라도 끝냅니다. 복잡한 맥락은 시스템이 기억합니다.</p>
+
+        {/* 퀵 일정 추가 버튼 그룹 (프로젝트 / 일상 / 긴급) */}
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            onClick={() => openNewScheduleModal("daily")}
+            className="flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200 px-2.5 py-1 text-xs font-bold text-sky-800 hover:bg-sky-100 shadow-2xs"
+          >
+            <Coffee className="h-3 w-3 text-sky-600" /> + 일상/개인 일정
+          </button>
+          <button
+            onClick={() => openNewScheduleModal("urgent")}
+            className="flex items-center gap-1 rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1 text-xs font-bold text-rose-800 hover:bg-rose-100 shadow-2xs"
+          >
+            <Zap className="h-3 w-3 text-rose-600" /> + 돌발/긴급
+          </button>
+        </div>
       </header>
 
       {/* 2. NOW / Continue & 일정 대시보드 */}
@@ -228,11 +288,7 @@ export default function Today() {
                 </span>
               </div>
               <button
-                onClick={() => {
-                  setEditingSchedule(null);
-                  setScheduleConflict(false);
-                  setShowSchedule(true);
-                }}
+                onClick={() => openNewScheduleModal("project")}
                 className="flex items-center gap-1 text-xs font-extrabold text-emerald-700 hover:underline"
               >
                 <Plus className="h-3.5 w-3.5" /> 일정 추가
@@ -242,8 +298,6 @@ export default function Today() {
             <div className="mt-2 space-y-1">
               {data?.schedules.length ? (
                 data.schedules.map(item => {
-                  const task = item.taskId ? taskById.get(item.taskId) : undefined;
-                  const project = task?.projectId ? projectById.get(task.projectId) : undefined;
                   const done = item.status === "completed";
                   const isActive = item.status === "in_progress";
                   const parsed = parseScheduleNotes(item.notes);
@@ -253,7 +307,6 @@ export default function Today() {
                       )
                     : "미정";
 
-                  // 카테고리 뱃지 설정
                   const isDaily = parsed.category === "daily" || (!item.taskId && !parsed.category);
                   const isUrgent = parsed.category === "urgent";
 
@@ -294,9 +347,9 @@ export default function Today() {
                           {item.title}
                         </span>
 
-                        {/* 소요시간 및 휴식 표시 */}
+                        {/* 소요시간 표시 */}
                         <span className={`text-[10px] font-mono shrink-0 hidden sm:inline ${isActive ? "text-emerald-100" : "text-slate-500"}`}>
-                          ({parsed.duration}분{parsed.breakTime > 0 ? `·휴${parsed.breakTime}분` : ""})
+                          ({formatMinutesToHuman(parsed.duration)}{parsed.breakTime > 0 ? `·휴${formatMinutesToHuman(parsed.breakTime)}` : ""})
                         </span>
                       </div>
 
@@ -339,7 +392,7 @@ export default function Today() {
                   );
                 })
               ) : (
-                <EmptySchedule onAdd={() => setShowSchedule(true)} />
+                <EmptySchedule onAdd={() => openNewScheduleModal("project")} />
               )}
             </div>
           </div>
@@ -400,13 +453,12 @@ export default function Today() {
         )}
       </section>
 
-      {/* 5. 똑똑한 스마트 일정 생성기 (시작 + 예상 - 휴식시간 계산 + 카테고리 분리) */}
+      {/* 5. 똑똑한 스마트 일정 생성기 (1h, 1.5h, 30m 지원) */}
       {showSchedule && (
         <SmartScheduleComposer
           tasks={data?.tasks ?? []}
+          initialCategory={initialCategory}
           schedule={editingSchedule}
-          latestSchedule={editingSchedule ? data?.schedules.find(item => item.id === editingSchedule.id) ?? null : null}
-          conflict={scheduleConflict}
           onCancel={() => {
             setShowSchedule(false);
             setEditingSchedule(null);
@@ -443,20 +495,18 @@ function EmptySchedule({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-{/* 스마트 시간 계산 & 카테고리 분리 일정 모달 */}
+{/* 스마트 시간 계산 & 카테고리 분리 일정 모달 (1h, 1.5h, 30m 지원) */}
 function SmartScheduleComposer({
   tasks,
+  initialCategory,
   schedule,
-  latestSchedule,
-  conflict,
   onCancel,
   onSubmit,
   busy,
 }: {
   tasks: Array<{ id: number; title: string }>;
+  initialCategory: ScheduleCategory;
   schedule: any | null;
-  latestSchedule: any | null;
-  conflict: boolean;
   onCancel: () => void;
   onSubmit: (values: {
     title: string;
@@ -469,7 +519,7 @@ function SmartScheduleComposer({
   busy: boolean;
 }) {
   const parsed = parseScheduleNotes(schedule?.notes);
-  const [category, setCategory] = useState<ScheduleCategory>(parsed.category);
+  const [category, setCategory] = useState<ScheduleCategory>(schedule ? parsed.category : initialCategory);
   const [title, setTitle] = useState(schedule?.title ?? "");
   const [startTime, setStartTime] = useState(
     schedule?.plannedStartAt
@@ -478,20 +528,21 @@ function SmartScheduleComposer({
         )
       : "09:00"
   );
-  const [duration, setDuration] = useState<number>(parsed.duration);
-  const [breakTime, setBreakTime] = useState<number>(parsed.breakTime);
+  const [durationInput, setDurationInput] = useState(schedule ? formatMinutesToHuman(parsed.duration) : "1h");
+  const [breakInput, setBreakInput] = useState(schedule ? formatMinutesToHuman(parsed.breakTime) : "0m");
   const [taskId, setTaskId] = useState(schedule?.taskId ? String(schedule.taskId) : "");
 
-  // 순수 집중 시간 및 종료 시간 자동 계산
-  const netFocusMinutes = Math.max(0, duration - breakTime);
+  const durationMin = parseTimeToMinutes(durationInput) || 60;
+  const breakMin = parseTimeToMinutes(breakInput) || 0;
+  const netFocusMinutes = Math.max(0, durationMin - breakMin);
 
   const endTimeString = useMemo(() => {
     const [h, m] = startTime.split(":").map(Number);
-    const endMinutes = h * 60 + m + duration;
+    const endMinutes = h * 60 + m + durationMin;
     const endH = Math.floor(endMinutes / 60) % 24;
     const endM = endMinutes % 60;
     return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
-  }, [startTime, duration]);
+  }, [startTime, durationMin]);
 
   const submit = (expectedRevision?: number) => {
     if (!title.trim()) return;
@@ -499,8 +550,8 @@ function SmartScheduleComposer({
     const plannedStartAt = schedule?.plannedStartAt ? new Date(schedule.plannedStartAt) : new Date();
     plannedStartAt.setHours(h, m, 0, 0);
 
-    const plannedEndAt = new Date(plannedStartAt.getTime() + duration * 60 * 1000);
-    const notesJson = JSON.stringify({ category, duration, breakTime });
+    const plannedEndAt = new Date(plannedStartAt.getTime() + durationMin * 60 * 1000);
+    const notesJson = JSON.stringify({ category, duration: durationMin, breakTime: breakMin });
 
     onSubmit({
       title: title.trim(),
@@ -598,7 +649,7 @@ function SmartScheduleComposer({
         )}
       </div>
 
-      {/* 3. 🌟 스마트 시간 계산 공식 (시작시간 + 예상시간 - 휴식시간) */}
+      {/* 3. 🌟 스마트 시간 계산 공식 (1h, 1.5h, 30m) */}
       <div className="mt-2.5 rounded-xl bg-slate-50 p-2.5 border border-slate-200 space-y-2">
         <div className="grid grid-cols-3 gap-2">
           <div>
@@ -611,25 +662,25 @@ function SmartScheduleComposer({
             />
           </div>
           <div>
-            <label className="font-extrabold text-slate-700 text-[11px] block">예상 소요(분)</label>
+            <label className="font-extrabold text-slate-700 text-[11px] block">예상 시간</label>
             <input
-              type="number"
-              min="5"
-              step="5"
-              value={duration}
-              onChange={e => setDuration(Number(e.target.value))}
-              className="mono-input h-8 text-xs font-bold mt-0.5"
+              type="text"
+              value={durationInput}
+              onChange={e => setDurationInput(e.target.value)}
+              placeholder="1.5h"
+              className="mono-input h-8 text-xs font-bold mt-0.5 text-center px-1.5"
+              title="예: 1h, 1.5h, 30m, 90"
             />
           </div>
           <div>
-            <label className="font-extrabold text-slate-700 text-[11px] block">휴식 시간(분)</label>
+            <label className="font-extrabold text-slate-700 text-[11px] block">휴식 시간</label>
             <input
-              type="number"
-              min="0"
-              step="5"
-              value={breakTime}
-              onChange={e => setBreakTime(Number(e.target.value))}
-              className="mono-input h-8 text-xs font-bold mt-0.5"
+              type="text"
+              value={breakInput}
+              onChange={e => setBreakInput(e.target.value)}
+              placeholder="0m"
+              className="mono-input h-8 text-xs font-bold mt-0.5 text-center px-1.5"
+              title="예: 0m, 15m, 0.5h"
             />
           </div>
         </div>
@@ -637,10 +688,10 @@ function SmartScheduleComposer({
         {/* 자동 계산 결과 요약 바 */}
         <div className="flex items-center justify-between pt-1.5 border-t border-slate-200 text-[11px]">
           <span className="font-bold text-slate-600">
-            ⏰ {startTime} ~ {endTimeString} ({duration}분)
+            ⏰ {startTime} ~ {endTimeString} ({formatMinutesToHuman(durationMin)})
           </span>
           <span className="font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
-            순수 집중: {formatMinutes(netFocusMinutes)}
+            순수 집중: {formatMinutesToHuman(netFocusMinutes)} ({netFocusMinutes}분)
           </span>
         </div>
       </div>
