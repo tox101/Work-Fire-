@@ -656,90 +656,86 @@ function CompactStageBlock({
               </button>
             </div>
 
-            {/* 세부작업 또는 날짜/시간계산 인풋 확장 영역 */}
-            {(showNextAction || showDateInput) && (
-              <div className="flex flex-wrap gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 text-xs">
-                {showNextAction && (
-                  <div className="flex items-center gap-1 flex-1 min-w-[160px]">
-                    <span className="text-[10px] font-bold text-slate-500 shrink-0">세부작업:</span>
-                    <input
-                      value={nextAction}
-                      onChange={event => setNextAction(event.target.value)}
-                      className="mono-input h-7 text-xs font-semibold flex-1"
-                      placeholder="구체적인 세부 작업 내용 입력"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNextAction("");
-                        setShowNextAction(false);
-                      }}
-                      className="p-1 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="h-3 w-3" />
+            {/* 세부작업 인풋 확장 영역 */}
+            {showNextAction && (
+              <div className="flex items-center gap-1 bg-white p-1.5 rounded-lg border border-slate-200 text-xs">
+                <span className="text-[10px] font-bold text-slate-500 shrink-0">세부작업:</span>
+                <input
+                  value={nextAction}
+                  onChange={event => setNextAction(event.target.value)}
+                  className="mono-input h-7 text-xs font-semibold flex-1"
+                  placeholder="구체적인 세부 작업 내용 입력"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNextAction("");
+                    setShowNextAction(false);
+                  }}
+                  className="p-1 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+
+            {/* 🌟 신규 태스크 날짜/시간 & 집중 시간 설정 중앙 모달 */}
+            {showDateInput && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in">
+                <div className="w-full max-w-md flex flex-col gap-2.5 bg-white p-4 sm:p-5 rounded-2xl border-2 border-emerald-600 shadow-2xl text-xs">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="font-black text-slate-950 text-sm">📅 날짜/시간 & 집중 시간 설정</span>
+                    <button type="button" onClick={() => setShowDateInput(false)} className="text-slate-400 hover:text-slate-700 p-0.5">
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
-                )}
-                {showDateInput && (
-                  <div className="w-full space-y-1.5">
-                    {/* 날짜 & 시작 시간 */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-emerald-700 shrink-0">📅 날짜/시간:</span>
-                      <input
-                        type="date"
-                        value={planDate}
-                        onChange={event => setPlanDate(event.target.value)}
-                        className="mono-input h-7 text-xs w-32 px-1.5 font-semibold"
-                      />
-                      <input
-                        type="time"
-                        value={planTime}
-                        onChange={event => setPlanTime(event.target.value)}
-                        className="mono-input h-7 text-xs w-20 px-1 font-semibold"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowDateInput(false)}
-                        className="ml-auto p-1 text-slate-400 hover:text-slate-600"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-
-                    {/* 🌟 스마트 시간 계산: 1h, 1.5h, 30m 단위 입력 지원 & 안 짤리는 패딩 */}
-                    <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 rounded-lg px-2 py-1.5 border border-slate-200">
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-[10px] font-bold text-slate-700">예상:</span>
-                        <input
-                          type="text"
-                          value={durationInput}
-                          onChange={event => setDurationInput(event.target.value)}
-                          placeholder="1.5h"
-                          className="mono-input h-6 text-xs w-16 px-1.5 text-center font-bold"
-                          title="예: 1h, 1.5h, 30m, 90 등 입력"
-                        />
-                      </div>
-                      <span className="text-slate-400 font-bold text-[11px]">−</span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-[10px] font-bold text-slate-700">휴식:</span>
-                        <input
-                          type="text"
-                          value={breakInput}
-                          onChange={event => setBreakInput(event.target.value)}
-                          placeholder="0m"
-                          className="mono-input h-6 text-xs w-14 px-1.5 text-center font-bold"
-                          title="예: 0m, 15m, 0.5h 등 입력"
-                        />
-                      </div>
-                      <span className="text-slate-400 font-bold text-[11px]">=</span>
-                      <div className="flex items-center gap-1 bg-emerald-100 border border-emerald-300 rounded px-2 py-0.5 shrink-0">
-                        <span className="text-[10px] font-black text-emerald-900">
-                          총 {formatMinutesToHuman(netFocusMin)} ({netFocusMin}분) 집중
-                        </span>
-                      </div>
-                    </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="date"
+                      value={planDate}
+                      onChange={event => setPlanDate(event.target.value)}
+                      className="mono-input h-8 text-xs flex-1 px-2 font-semibold"
+                    />
+                    <input
+                      type="time"
+                      value={planTime}
+                      onChange={event => setPlanTime(event.target.value)}
+                      className="mono-input h-8 text-xs w-24 px-2 font-semibold"
+                    />
                   </div>
-                )}
+                  <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-700">예상:</span>
+                    <input
+                      type="text"
+                      value={durationInput}
+                      onChange={event => setDurationInput(event.target.value)}
+                      placeholder="1.5h"
+                      className="mono-input h-7 text-xs w-18 px-1.5 text-center font-bold"
+                      title="예: 1h, 1.5h, 30m, 90 등"
+                    />
+                    <span className="text-slate-400 font-bold">−</span>
+                    <span className="text-[10px] font-bold text-slate-700">휴식:</span>
+                    <input
+                      type="text"
+                      value={breakInput}
+                      onChange={event => setBreakInput(event.target.value)}
+                      placeholder="0m"
+                      className="mono-input h-7 text-xs w-14 px-1.5 text-center font-bold"
+                      title="예: 0m, 15m, 0.5h 등"
+                    />
+                    <span className="text-slate-400 font-bold">=</span>
+                    <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 border border-emerald-300 rounded px-2 py-0.5">
+                      총 {formatMinutesToHuman(netFocusMin)} ({netFocusMin}분) 집중
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDateInput(false)}
+                    className="rounded-xl bg-emerald-700 py-2.5 text-xs font-black text-white hover:bg-emerald-800 shadow-sm mt-1"
+                  >
+                    설정 완료 (태스크 추가 시 자동 등록)
+                  </button>
+                </div>
               </div>
             )}
           </form>
