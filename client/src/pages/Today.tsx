@@ -68,97 +68,176 @@ export default function Today() {
   const suggestedProject = suggestedTask?.projectId ? projectById.get(suggestedTask.projectId) : null;
 
   return (
-    <div className="space-y-5">
-      <header className="grid gap-3 border-b border-slate-200 pb-5 sm:grid-cols-[1fr_auto] sm:items-end">
-        <div>
-          <p className="industrial-label text-emerald-800 font-extrabold">Today / {dateHeading()}</p>
-          <h1 className="industrial-title mt-1.5 text-4xl text-slate-950 sm:text-5xl">오늘의<br />다음 행동</h1>
+    <div className="space-y-3">
+      {/* 1. 컴팩트 헤더 */}
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-black text-slate-950">오늘의 실행</h1>
+          <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
+            {dateHeading()}
+          </span>
         </div>
-        <p className="max-w-72 text-sm sm:text-base font-bold leading-relaxed text-slate-700">작은 일이라도 끝냅니다. 복잡한 맥락은 시스템이 기억합니다.</p>
+        <p className="text-xs font-semibold text-slate-600 hidden sm:block">작은 일이라도 끝냅니다. 복잡한 맥락은 시스템이 기억합니다.</p>
       </header>
 
-      <section className="grid gap-5 lg:grid-cols-[1.08fr_.92fr]">
-        <div className="block-shadow border-2 border-emerald-600 bg-emerald-700 p-5 text-white sm:p-6 shadow-md">
-          <div className="flex items-center justify-between">
-            <p className="industrial-label text-emerald-100 font-extrabold">{now ? "Now / 진행 중" : "Continue / 이어서"}</p>
-            <Clock3 className="h-6 w-6 text-emerald-100" />
+      {/* 2. NOW / Continue & 일정 대시보드 (초슬림 & 꽉 찬 구성) */}
+      <section className="grid gap-3 lg:grid-cols-[1.1fr_.9fr]">
+        <div className="rounded-xl border-2 border-emerald-600 bg-emerald-700 p-4 text-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-emerald-500/60 pb-2">
+            <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-100">
+              {now ? "● NOW / 지금 진행 중" : "▶ CONTINUE / 이어서 하기"}
+            </span>
+            <Clock3 className="h-4 w-4 text-emerald-100" />
           </div>
+
           {linkedTask ? (
-            <>
-              <h2 className="industrial-title mt-4 text-3xl sm:text-4xl text-white">{linkedTask.title}</h2>
-              <p className="mt-2 text-base font-bold text-emerald-100">{linkedProject?.title ?? "독립 작업"}{linkedStage ? ` / ${linkedStage.title}` : ""}</p>
-              {continueItem?.lastRecord && <blockquote className="mt-4 border-l-4 border-emerald-200 pl-3.5 text-base font-medium leading-relaxed text-emerald-50">“{continueItem.lastRecord.content}”</blockquote>}
-              <div className="mt-5 border-t border-emerald-500/80 pt-4">
-                <p className="industrial-label text-emerald-200 font-extrabold">Next action</p>
-                <p className="mt-1.5 text-base font-bold text-white">{linkedTask.nextAction || "다음 행동을 남겨 주세요."}</p>
+            <div className="mt-2.5">
+              <h2 className="text-2xl font-black text-white leading-tight">{linkedTask.title}</h2>
+              <p className="mt-1 text-xs font-bold text-emerald-100">
+                {linkedProject?.title ?? "독립 작업"}{linkedStage ? ` › ${linkedStage.title}` : ""}
+              </p>
+              {continueItem?.lastRecord && (
+                <blockquote className="mt-2 border-l-2 border-emerald-200 pl-2.5 text-xs font-medium leading-normal text-emerald-50">
+                  “{continueItem.lastRecord.content}”
+                </blockquote>
+              )}
+              <div className="mt-2.5 rounded-lg bg-emerald-800/80 p-2 border border-emerald-600">
+                <span className="text-[11px] font-extrabold uppercase text-emerald-200 block">Next Action</span>
+                <p className="mt-0.5 text-xs font-bold text-white">{linkedTask.nextAction || "다음 행동을 남겨 주세요."}</p>
               </div>
-              <div className="mt-5 flex flex-wrap gap-2.5">
-                {linkedTask.status !== "in_progress" && <button onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "in_progress" })} className="pressable flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-base font-extrabold text-emerald-800 shadow"><Play className="h-4 w-4 fill-current" /> 시작</button>}
-                <button onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "done" })} className="pressable flex h-11 items-center gap-2 rounded-xl border-2 border-emerald-200 bg-emerald-800/80 px-5 text-base font-extrabold text-white hover:bg-emerald-800"><Check className="h-5 w-5" /> 완료</button>
-                <button onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "on_hold" })} className="pressable flex h-11 items-center gap-2 px-4 text-base font-bold text-emerald-100 hover:text-white"><Pause className="h-5 w-5" /> 보류</button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {linkedTask.status !== "in_progress" && (
+                  <button
+                    onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "in_progress" })}
+                    className="pressable flex h-9 items-center gap-1.5 rounded-lg bg-white px-3.5 text-xs font-black text-emerald-800 shadow-xs"
+                  >
+                    <Play className="h-3.5 w-3.5 fill-current" /> 시작
+                  </button>
+                )}
+                <button
+                  onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "done" })}
+                  className="pressable flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-800 px-3.5 text-xs font-black text-white hover:bg-emerald-900"
+                >
+                  <Check className="h-4 w-4" /> 완료
+                </button>
+                <button
+                  onClick={() => setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "on_hold" })}
+                  className="pressable flex h-9 items-center gap-1 px-2.5 text-xs font-bold text-emerald-100 hover:text-white"
+                >
+                  <Pause className="h-4 w-4" /> 보류
+                </button>
               </div>
-            </>
+            </div>
           ) : (
             <div className="py-2">
-              {suggestedTask ? <SuggestedTaskSummary task={suggestedTask} projectTitle={suggestedProject?.title ?? "연결된 Project 없음"} onStart={() => setTaskStatus.mutate({ id: suggestedTask.id, expectedRevision: suggestedTask.revision, status: "in_progress" })} /> : <>
-                <h2 className="industrial-title text-3xl sm:text-4xl text-white">시작할 작업이<br />없습니다.</h2>
-                <p className="mt-2.5 text-base font-semibold leading-relaxed text-emerald-100">프로젝트를 만들거나 오늘의 일정을 추가하세요.</p>
-                <button onClick={() => setLocation("/projects")} className="pressable mt-5 rounded-xl bg-white px-5 py-3 text-base font-extrabold text-emerald-800 shadow">Project 만들기</button>
-              </>}
+              {suggestedTask ? (
+                <SuggestedTaskSummary
+                  task={suggestedTask}
+                  projectTitle={suggestedProject?.title ?? "연결된 Project 없음"}
+                  onStart={() => setTaskStatus.mutate({ id: suggestedTask.id, expectedRevision: suggestedTask.revision, status: "in_progress" })}
+                />
+              ) : (
+                <>
+                  <h2 className="text-xl font-black text-white">시작할 작업이 없습니다.</h2>
+                  <p className="mt-1 text-xs font-semibold text-emerald-100">프로젝트를 만들거나 오늘의 일정을 추가하세요.</p>
+                  <button
+                    onClick={() => setLocation("/projects")}
+                    className="pressable mt-3 rounded-lg bg-white px-3.5 py-2 text-xs font-black text-emerald-800 shadow"
+                  >
+                    Project 만들기
+                  </button>
+                </>
+              )}
               {latestRecord && <RecentCaptureSummary content={latestRecord.content} />}
             </div>
           )}
         </div>
 
-        <aside className="relative overflow-hidden rounded-2xl border border-emerald-100 bg-[#fbfffc] p-4 sm:p-5">
-          <div className="absolute right-0 top-0 h-16 w-16 rounded-bl-2xl bg-emerald-100/70" />
-          <p className="industrial-label relative text-emerald-700 font-bold">Today / 일정</p>
-          <div className="relative mt-4 space-y-1.5">
-            {data?.schedules.length ? data.schedules.map(item => {
-              const task = item.taskId ? taskById.get(item.taskId) : undefined;
-              const project = task?.projectId ? projectById.get(task.projectId) : undefined;
-              const done = item.status === "completed";
-              const isActive = item.status === "in_progress";
-              const time = item.plannedStartAt ? new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(item.plannedStartAt) : "시간 미정";
-              return <article key={item.id} className={`group grid grid-cols-[68px_1fr_auto] items-start gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${isActive ? "bg-emerald-600 text-white shadow-sm" : "hover:bg-emerald-50 bg-white/70 border border-slate-100"}`}>
-                <span className={`text-xs font-bold pt-0.5 ${isActive ? "text-white" : "text-slate-600 font-mono"}`}>{time}</span>
-                <div>
-                  <p className={`text-sm font-bold leading-snug ${done ? "line-through opacity-45" : isActive ? "text-white" : "text-slate-800"}`}>{item.title}</p>
-                  {task ? (
-                    <p className={`mt-1 text-xs font-semibold ${isActive ? "text-emerald-100" : "text-slate-600"}`}>
-                      {project?.title ?? "Project"}{task ? ` › ${task.title}` : ""}
-                    </p>
-                  ) : (
-                    <p className={`mt-1 text-xs font-semibold ${isActive ? "text-emerald-200" : "text-slate-500"}`}>개인 일정</p>
-                  )}
-                </div>
-                <div className="flex gap-1 pt-0.5">
-                  {done ? (
-                    <Check className="h-5 w-5 text-emerald-600" />
-                  ) : (
-                    <button aria-label={`${item.title} ${isActive ? "완료" : "시작"}`} onClick={() => setScheduleStatus.mutate({ id: item.id, expectedRevision: item.revision, status: isActive ? "completed" : "in_progress" })} className="rounded-full p-1 hover:bg-white hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current">
-                      {isActive ? <Check className="h-5 w-5 text-white" /> : <Circle className="h-5 w-5 text-slate-400 hover:text-emerald-600" />}
-                    </button>
-                  )}
-                  <button aria-label={`${item.title} 일정 수정`} onClick={() => { setEditingSchedule({ id: item.id, revision: item.revision, title: item.title, taskId: item.taskId, plannedStartAt: item.plannedStartAt }); setShowSchedule(true); }} className={`rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${isActive ? "hover:bg-white/20 text-white" : "hover:bg-slate-200 text-slate-500"}`}>
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                </div>
-              </article>;
-            }) : <EmptySchedule onAdd={() => setShowSchedule(true)} />}
+        {/* 오늘 일정 컴팩트 목록 */}
+        <aside className="rounded-xl border-2 border-slate-200 bg-white p-3 sm:p-4 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-800">Today 일정 타임라인</span>
+              <button
+                onClick={() => { setEditingSchedule(null); setScheduleConflict(false); setShowSchedule(true); }}
+                className="flex items-center gap-1 text-xs font-extrabold text-emerald-700 hover:underline"
+              >
+                <Plus className="h-3.5 w-3.5" /> 일정 추가
+              </button>
+            </div>
+            <div className="mt-2 space-y-1">
+              {data?.schedules.length ? data.schedules.map(item => {
+                const task = item.taskId ? taskById.get(item.taskId) : undefined;
+                const project = task?.projectId ? projectById.get(task.projectId) : undefined;
+                const done = item.status === "completed";
+                const isActive = item.status === "in_progress";
+                const time = item.plannedStartAt ? new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(item.plannedStartAt) : "미정";
+                return (
+                  <article key={item.id} className={`group flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 transition-colors ${isActive ? "bg-emerald-600 text-white shadow-2xs" : "hover:bg-slate-50 bg-slate-50/60 border border-slate-100"}`}>
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className={`text-xs font-bold font-mono shrink-0 ${isActive ? "text-white" : "text-slate-600"}`}>{time}</span>
+                      <span className={`text-xs font-bold truncate ${done ? "line-through opacity-45" : isActive ? "text-white" : "text-slate-900"}`}>{item.title}</span>
+                      {task && (
+                        <span className={`text-[10px] font-semibold truncate hidden sm:inline ${isActive ? "text-emerald-100" : "text-slate-500"}`}>
+                          ({project?.title ?? "P"} › {task.title})
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {done ? (
+                        <Check className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <button aria-label={`${item.title} ${isActive ? "완료" : "시작"}`} onClick={() => setScheduleStatus.mutate({ id: item.id, expectedRevision: item.revision, status: isActive ? "completed" : "in_progress" })} className="p-0.5 hover:bg-white hover:text-slate-900 rounded">
+                          {isActive ? <Check className="h-4 w-4 text-white" /> : <Circle className="h-4 w-4 text-slate-400 hover:text-emerald-600" />}
+                        </button>
+                      )}
+                      <button aria-label={`${item.title} 수정`} onClick={() => { setEditingSchedule({ id: item.id, revision: item.revision, title: item.title, taskId: item.taskId, plannedStartAt: item.plannedStartAt }); setShowSchedule(true); }} className={`p-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${isActive ? "text-white" : "text-slate-400 hover:text-slate-800"}`}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </article>
+                );
+              }) : <EmptySchedule onAdd={() => setShowSchedule(true)} />}
+            </div>
           </div>
-          {data?.schedules.length ? <button onClick={() => { setEditingSchedule(null); setScheduleConflict(false); setShowSchedule(true); }} className="mt-4 flex items-center gap-1.5 text-sm font-bold text-emerald-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"><Plus className="h-4 w-4" /> 일정 추가</button> : null}
         </aside>
       </section>
 
-      <PinnedRecordSummary items={pinnedRecords.data ?? []} loading={pinnedRecords.isLoading} onViewRecords={() => setLocation("/records")} />
+      {/* 3. 하단 카드 섹션들 (패딩 축소 & 가로 배치) */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <PinnedRecordSummary items={pinnedRecords.data ?? []} loading={pinnedRecords.isLoading} onViewRecords={() => setLocation("/records")} />
+        <WeeklySummary completedTaskCount={weeklySummary.data?.completedTaskCount ?? 0} recordCount={weeklySummary.data?.recordCount ?? 0} completedScheduleCount={weeklySummary.data?.completedScheduleCount ?? 0} change={weeklySummary.data?.change} loading={weeklySummary.isLoading} />
+      </div>
 
-      {savedSearches.data?.length ? <section aria-label="Today 저장 Record 검색" className="rounded-2xl border border-emerald-100 bg-white/80 p-3 sm:p-4"><div className="flex items-center justify-between gap-3"><div><p className="industrial-label text-emerald-600">Saved searches</p><h2 className="industrial-title mt-1 text-xl text-violet-950">바로 찾기</h2></div><button type="button" onClick={() => setLocation("/records")} className="pressable text-xs font-bold text-emerald-700 hover:underline">전체 보기</button></div><div className="mt-3 flex flex-wrap gap-1.5">{savedSearches.data.slice(0, 4).map(search => <button type="button" key={search.id} onClick={() => setLocation(`/records?savedSearch=${search.id}`)} aria-label={`${search.name} 저장 검색 실행`} className="pressable rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100">{search.name}</button>)}</div></section> : null}
+      {savedSearches.data?.length ? (
+        <section aria-label="Today 저장 Record 검색" className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-black text-slate-800">저장된 검색 바로가기</span>
+            <button type="button" onClick={() => setLocation("/records")} className="text-xs font-bold text-emerald-800 hover:underline">전체 보기 →</button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {savedSearches.data.slice(0, 6).map(search => (
+              <button type="button" key={search.id} onClick={() => setLocation(`/records?savedSearch=${search.id}`)} className="pressable rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-800 hover:bg-emerald-50 hover:text-emerald-900">
+                {search.name}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
-      <WeeklySummary completedTaskCount={weeklySummary.data?.completedTaskCount ?? 0} recordCount={weeklySummary.data?.recordCount ?? 0} completedScheduleCount={weeklySummary.data?.completedScheduleCount ?? 0} change={weeklySummary.data?.change} loading={weeklySummary.isLoading} />
-
-      <section className="border-t border-violet-100 pt-4">
-        {!showCapture ? <button onClick={() => setShowCapture(true)} className="pressable block-shadow flex h-11 w-full items-center justify-between border border-violet-100 bg-white/90 px-4 text-left hover:bg-violet-50 sm:px-5"><span className="industrial-title text-xl text-violet-950">기록하기</span><SquarePen className="h-4 w-4 text-violet-400" /></button> : <CapturePanel workspace={data} onComplete={() => setShowCapture(false)} />}
+      {/* 4. 슬림 빠른 기록 버튼 */}
+      <section className="pt-1">
+        {!showCapture ? (
+          <button
+            onClick={() => setShowCapture(true)}
+            className="pressable flex h-10 w-full items-center justify-between rounded-xl border-2 border-slate-200 bg-white px-4 hover:border-emerald-500 hover:bg-emerald-50/50 shadow-2xs"
+          >
+            <span className="text-sm font-black text-slate-900">+ 새로운 생각이나 작업 기록하기...</span>
+            <SquarePen className="h-4 w-4 text-emerald-700" />
+          </button>
+        ) : (
+          <CapturePanel workspace={data} onComplete={() => setShowCapture(false)} />
+        )}
       </section>
 
       {showSchedule && <ScheduleComposer tasks={data?.tasks ?? []} schedule={editingSchedule} latestSchedule={editingSchedule ? data?.schedules.find(item => item.id === editingSchedule.id) ?? null : null} conflict={scheduleConflict} onCancel={closeSchedule} onSubmit={({ title, taskId, plannedStartAt, expectedRevision }) => {
