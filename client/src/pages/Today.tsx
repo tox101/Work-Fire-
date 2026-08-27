@@ -316,42 +316,42 @@ export default function Today() {
                   return (
                     <article
                       key={item.id}
-                      className={`group flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 transition-colors ${
+                      className={`group flex items-center justify-between gap-2.5 rounded-xl px-3 py-2 transition-all ${
                         isActive
-                          ? "bg-emerald-600 text-white shadow-2xs"
-                          : "hover:bg-slate-50 bg-slate-50/70 border border-slate-100"
+                          ? "bg-emerald-700 text-white shadow-md ring-2 ring-emerald-500"
+                          : "hover:bg-slate-100 bg-white border border-slate-200 shadow-2xs"
                       }`}
                     >
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <span className={`text-xs font-bold font-mono shrink-0 ${isActive ? "text-white" : "text-slate-600"}`}>
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className={`text-sm font-black font-mono shrink-0 ${isActive ? "text-emerald-100" : "text-slate-700"}`}>
                           {time}
                         </span>
 
                         {/* 카테고리 태그 */}
                         {isUrgent ? (
-                          <span className="rounded bg-rose-100 text-rose-800 border border-rose-200 px-1 py-0.2 text-[10px] font-black shrink-0">
+                          <span className="rounded-md bg-rose-100 text-rose-800 border border-rose-200 px-1.5 py-0.5 text-xs font-black shrink-0">
                             🚨 긴급
                           </span>
                         ) : isDaily ? (
-                          <span className="rounded bg-sky-100 text-sky-800 border border-sky-200 px-1 py-0.2 text-[10px] font-black shrink-0">
+                          <span className="rounded-md bg-sky-100 text-sky-800 border border-sky-200 px-1.5 py-0.5 text-xs font-black shrink-0">
                             ☕ 일상
                           </span>
                         ) : (
-                          <span className="rounded bg-emerald-100 text-emerald-800 border border-emerald-200 px-1 py-0.2 text-[10px] font-black shrink-0">
+                          <span className="rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 text-xs font-black shrink-0">
                             🛠️ Pjt
                           </span>
                         )}
 
                         <span
-                          className={`text-xs font-bold truncate ${
-                            done ? "line-through opacity-45" : isActive ? "text-white" : "text-slate-900"
+                          className={`text-sm font-black truncate ${
+                            done ? "line-through opacity-45 text-slate-400" : isActive ? "text-white" : "text-slate-950"
                           }`}
                         >
                           {item.title}
                         </span>
 
-                        {/* 소요시간 표시 */}
-                        <span className={`text-[10px] font-mono shrink-0 hidden sm:inline ${isActive ? "text-emerald-100" : "text-slate-500"}`}>
+                        {/* 소요시간 및 휴식 표시 */}
+                        <span className={`text-xs font-bold shrink-0 ${isActive ? "text-emerald-200" : "text-slate-500"}`}>
                           ({formatMinutesToHuman(parsed.duration)}{parsed.breakTime > 0 ? `·휴${formatMinutesToHuman(parsed.breakTime)}` : ""})
                         </span>
                       </div>
@@ -532,7 +532,7 @@ function SmartScheduleComposer({
       : "09:00"
   );
   const [durationInput, setDurationInput] = useState(schedule ? formatMinutesToHuman(parsed.duration) : "1h");
-  const [breakInput, setBreakInput] = useState(schedule ? formatMinutesToHuman(parsed.breakTime) : "0m");
+  const [breakInput, setBreakInput] = useState(schedule ? formatMinutesToHuman(parsed.breakTime) : "0h");
   const [taskId, setTaskId] = useState(schedule?.taskId ? String(schedule.taskId) : "");
 
   const durationMin = parseTimeToMinutes(durationInput) || 60;
@@ -653,7 +653,7 @@ function SmartScheduleComposer({
         )}
       </div>
 
-      {/* 3. 🌟 스마트 시간 계산 공식 (1h, 1.5h, 30m) */}
+      {/* 3. 🌟 스마트 시간 계산 공식 (1h, 1.5h, 0.5h) */}
       <div className="mt-2.5 rounded-xl bg-slate-50 p-2.5 border border-slate-200 space-y-2">
         <div className="grid grid-cols-3 gap-2">
           <div>
@@ -673,7 +673,7 @@ function SmartScheduleComposer({
               onChange={e => setDurationInput(e.target.value)}
               placeholder="1.5h"
               className="mono-input h-8 text-xs font-bold mt-0.5 text-center px-1.5"
-              title="예: 1h, 1.5h, 30m, 90"
+              title="예: 1h, 1.5h, 0.5h, 30m, 90"
             />
           </div>
           <div>
@@ -682,9 +682,9 @@ function SmartScheduleComposer({
               type="text"
               value={breakInput}
               onChange={e => setBreakInput(e.target.value)}
-              placeholder="0m"
+              placeholder="0.5h"
               className="mono-input h-8 text-xs font-bold mt-0.5 text-center px-1.5"
-              title="예: 0m, 15m, 0.5h"
+              title="예: 0h, 0.5h, 1h, 15m 등"
             />
           </div>
         </div>

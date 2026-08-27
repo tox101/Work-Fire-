@@ -889,9 +889,9 @@ function CompactTaskLine({
                 type="text"
                 value={breakInput}
                 onChange={e => setBreakInput(e.target.value)}
-                placeholder="0m"
+                placeholder="0.5h"
                 className="mono-input h-7 text-xs w-14 px-1.5 text-center font-bold"
-                title="예: 0m, 15m 등"
+                title="예: 0h, 0.5h, 1h, 15m 등"
               />
               <span className="text-slate-400 font-bold">=</span>
               <span className="text-[10px] font-black text-emerald-900 bg-emerald-100 border border-emerald-300 rounded px-2 py-0.5">
