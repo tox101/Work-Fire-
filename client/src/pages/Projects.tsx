@@ -1,10 +1,9 @@
-import { Archive, Check, ChevronDown, Circle, FolderPlus, Pencil, Plus, Play, SquareStack, X } from "lucide-react";
+import { Archive, Check, ChevronDown, ChevronRight, Circle, FolderPlus, Pencil, Play, Plus, SquareStack, Trash2, X } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ConflictResolutionNotice } from "@/components/ConflictResolutionNotice";
 import { ArchivedWorkspacePanel } from "@/components/ArchivedWorkspacePanel";
 import { WorkspaceExportPanel } from "@/components/WorkspaceExportPanel";
-import { ProjectNextStageSummary, ProjectProgressSummary, StageProgressHint } from "@/components/WorkspaceInsights";
 import { getProjectNextStage, getProjectProgress, getStageGuide } from "@/lib/workspaceSummary";
 import { trpc } from "@/lib/trpc";
 
@@ -38,83 +37,673 @@ export default function Projects() {
   const todayTaskIds = useMemo(() => new Set(overview.data?.schedules.flatMap(schedule => schedule.taskId ? [schedule.taskId] : []) ?? []), [overview.data?.schedules]);
   const submitProject = (event: FormEvent) => { event.preventDefault(); if (projectName.trim()) createProject.mutate({ title: projectName.trim() }); };
 
-  if (overview.isLoading) return <div className="space-y-5 animate-pulse"><div className="h-28 bg-neutral-300" /><div className="h-64 bg-neutral-200" /></div>;
-  return <div className="space-y-5">
-    <header className="grid gap-4 border-b border-slate-200 pb-5 lg:grid-cols-[1fr_340px] lg:items-end">
-      <div>
-        <p className="industrial-label text-emerald-800 font-extrabold">Projects / structure</p>
-        <h1 className="industrial-title mt-1.5 text-4xl text-slate-950 sm:text-5xl">작업의<br />구조</h1>
+  if (overview.isLoading) return <div className="space-y-4 animate-pulse"><div className="h-16 bg-neutral-200 rounded-xl" /><div className="h-48 bg-neutral-100 rounded-xl" /></div>;
+
+  return (
+    <div className="space-y-4 max-w-6xl mx-auto pb-16">
+      {/* 컴팩트 헤더 & 신규 프로젝트 인라인 생성 */}
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <div>
+          <h1 className="text-2xl font-black text-slate-950">프로젝트 관리</h1>
+          <p className="text-xs font-semibold text-slate-600">목표를 Stage와 Task로 빠르고 가볍게 구조화합니다.</p>
+        </div>
+        <form onSubmit={submitProject} className="flex gap-1.5 w-full sm:w-auto">
+          <input
+            value={projectName}
+            onChange={event => setProjectName(event.target.value)}
+            className="mono-input h-10 px-3 text-sm font-semibold sm:w-64"
+            placeholder="+ 새 Project 이름 입력"
+          />
+          <button
+            disabled={!projectName.trim() || createProject.isPending}
+            className="pressable flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white hover:bg-emerald-800 disabled:bg-slate-300 shadow-sm"
+          >
+            <FolderPlus className="h-4 w-4" /> 생성
+          </button>
+        </form>
+      </header>
+
+      {/* 공간 절약형 컴팩트 툴바 (선택 보관 & 백업 & 보관함) */}
+      <div className="space-y-2">
+        <CompactTools
+          projects={projects}
+          stages={stages}
+          tasks={tasks}
+          onArchive={values => bulkArchive.mutate(values)}
+          busy={bulkArchive.isPending}
+          error={bulkArchive.error?.message}
+          archivedData={archivedWorkspace.data}
+          onRestore={(entityType, item) => restoreArchivedItem.mutate({ entityType, id: item.id, expectedRevision: item.revision })}
+          restoreBusy={restoreArchivedItem.isPending}
+        />
       </div>
-      <form onSubmit={submitProject} className="flex gap-2">
-        <input value={projectName} onChange={event => setProjectName(event.target.value)} className="mono-input h-12 text-base font-semibold" placeholder="새 Project 이름 입력" />
-        <button disabled={!projectName.trim() || createProject.isPending} className="pressable flex h-12 shrink-0 items-center gap-2 rounded-xl bg-emerald-700 px-5 text-base font-bold text-white hover:bg-emerald-800 disabled:bg-slate-300">
-          <FolderPlus className="h-5 w-5" /> 생성
+
+      {/* 활성 프로젝트 목록 (초슬림 & 초간편 입력 구조) */}
+      {projects.filter(project => project.status === "active").length ? (
+        <div className="grid gap-4">
+          {projects
+            .filter(project => project.status === "active")
+            .map(project => (
+              <CompactProjectBlock
+                key={project.id}
+                project={project}
+                stages={stagesByProject.get(project.id) ?? []}
+                tasksByStage={tasksByStage}
+                tasks={tasks}
+                todayTaskIds={todayTaskIds}
+                onArchive={() => archiveProject.mutate({ id: project.id, expectedRevision: project.revision })}
+                onTaskStatus={(task, status) => setTaskStatus.mutate({ id: task.id, expectedRevision: task.revision, status })}
+                onTaskArchive={task => archiveTask.mutate({ id: task.id, expectedRevision: task.revision })}
+              />
+            ))}
+        </div>
+      ) : (
+        <EmptyProjects />
+      )}
+    </div>
+  );
+}
+
+{/* 접이식 공간 절약형 툴바 (선택 항목 보관 + 내보내기) */}
+function CompactTools({
+  projects,
+  stages,
+  tasks,
+  onArchive,
+  busy,
+  error,
+  archivedData,
+  onRestore,
+  restoreBusy,
+}: {
+  projects: ProjectItem[];
+  stages: StageItem[];
+  tasks: TaskItem[];
+  onArchive: (values: { projectIds: number[]; stageIds: number[]; taskIds: number[] }) => void;
+  busy: boolean;
+  error?: string;
+  archivedData: any;
+  onRestore: (entityType: any, item: any) => void;
+  restoreBusy: boolean;
+}) {
+  const [openCleanup, setOpenCleanup] = useState(false);
+  const [projectIds, setProjectIds] = useState<string[]>([]);
+  const [stageIds, setStageIds] = useState<string[]>([]);
+  const [taskIds, setTaskIds] = useState<string[]>([]);
+
+  const choose = (event: React.ChangeEvent<HTMLSelectElement>, setValues: (values: string[]) => void) =>
+    setValues(Array.from(event.target.selectedOptions, option => option.value));
+
+  const activeProjects = projects.filter(item => item.status === "active");
+  const activeStages = stages.filter(item => item.status !== "archived");
+  const activeTasks = tasks.filter(item => item.status !== "cancelled");
+  const selectedCount = projectIds.length + stageIds.length + taskIds.length;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white/80 p-2 sm:p-3 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setOpenCleanup(!openCleanup)}
+            className="flex items-center gap-1 font-bold text-slate-800 hover:text-emerald-800 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition-colors"
+          >
+            <Archive className="h-3.5 w-3.5 text-amber-600" />
+            <span>선택 항목 일괄 보관</span>
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${openCleanup ? "rotate-180" : ""}`} />
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <WorkspaceExportPanel />
+        </div>
+      </div>
+
+      {openCleanup && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label className="font-bold text-slate-800">
+              Project ({activeProjects.length})
+              <select
+                multiple
+                value={projectIds}
+                onChange={event => choose(event, setProjectIds)}
+                className="mono-input mt-1 h-20 w-full p-1.5 text-xs font-medium"
+              >
+                {activeProjects.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="font-bold text-slate-800">
+              Stage ({activeStages.length})
+              <select
+                multiple
+                value={stageIds}
+                onChange={event => choose(event, setStageIds)}
+                className="mono-input mt-1 h-20 w-full p-1.5 text-xs font-medium"
+              >
+                {activeStages.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="font-bold text-slate-800">
+              Task ({activeTasks.length})
+              <select
+                multiple
+                value={taskIds}
+                onChange={event => choose(event, setTaskIds)}
+                className="mono-input mt-1 h-20 w-full p-1.5 text-xs font-medium"
+              >
+                {activeTasks.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-2.5 flex items-center justify-between">
+            <span className="font-semibold text-slate-600">
+              {selectedCount ? `${selectedCount}개 선택됨` : "보관할 항목을 다중 선택하세요."}
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                onArchive({
+                  projectIds: projectIds.map(Number),
+                  stageIds: stageIds.map(Number),
+                  taskIds: taskIds.map(Number),
+                })
+              }
+              disabled={!selectedCount || busy}
+              className="pressable rounded-lg bg-amber-600 px-3 py-1.5 font-bold text-white hover:bg-amber-700 disabled:opacity-40"
+            >
+              {busy ? "보관 중..." : "선택 항목 보관 실행"}
+            </button>
+          </div>
+          {error && <p className="mt-1 font-bold text-rose-600">{error}</p>}
+        </div>
+      )}
+
+      <div className="mt-1">
+        <ArchivedWorkspacePanel data={archivedData} onRestore={onRestore} busy={restoreBusy} />
+      </div>
+    </div>
+  );
+}
+
+{/* 초슬림 & 공간 극대화 프로젝트 블록 */}
+function CompactProjectBlock({
+  project,
+  stages,
+  tasksByStage,
+  tasks,
+  todayTaskIds,
+  onArchive,
+  onTaskStatus,
+  onTaskArchive,
+}: {
+  project: ProjectItem;
+  stages: StageItem[];
+  tasksByStage: Map<number, TaskItem[]>;
+  tasks: TaskItem[];
+  todayTaskIds: Set<number>;
+  onArchive: () => void;
+  onTaskStatus: (task: TaskItem, status: TaskStatus) => void;
+  onTaskArchive: (task: TaskItem) => void;
+}) {
+  const utils = trpc.useUtils();
+  const [stageTitle, setStageTitle] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(project.title);
+  const [description, setDescription] = useState(project.description ?? "");
+  const [conflict, setConflict] = useState(false);
+
+  const createStage = trpc.workspace.createStage.useMutation({
+    onSuccess: () => {
+      setStageTitle("");
+      void utils.workspace.overview.invalidate();
+    },
+  });
+  const updateProject = trpc.workspace.updateProject.useMutation({
+    onSuccess: () => {
+      setConflict(false);
+      setEditing(false);
+      void utils.workspace.overview.invalidate();
+    },
+    onError: error => {
+      if (isConflict(error)) setConflict(true);
+      else toast.error(error.message);
+      void utils.workspace.overview.invalidate();
+    },
+  });
+
+  const progress = getProjectProgress(project.id, tasks, todayTaskIds);
+  const nextStage = getProjectNextStage(stages, tasksByStage);
+
+  const saveProject = () =>
+    updateProject.mutate({
+      id: project.id,
+      expectedRevision: project.revision,
+      title: title.trim(),
+      description: description.trim() || null,
+    });
+
+  return (
+    <section className="rounded-2xl border-2 border-slate-200 bg-white shadow-sm overflow-hidden">
+      {/* 1. 슬림 프로젝트 헤더 (제목 + 인라인 진행률 + 액션) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-3 sm:px-5">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <h2 className="text-xl font-black text-slate-950 truncate">{project.title}</h2>
+          {project.description && (
+            <span className="text-xs font-semibold text-slate-500 truncate hidden sm:inline">
+              · {project.description}
+            </span>
+          )}
+          {/* 인라인 슬림 프로그레스 */}
+          <div className="flex items-center gap-2 bg-white border border-slate-200 px-2.5 py-1 rounded-full text-xs font-bold text-slate-800 shrink-0">
+            <span>{progress.completed}/{progress.total}</span>
+            <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-600" style={{ width: `${progress.percent}%` }} />
+            </div>
+            <span className="text-emerald-800 font-extrabold">{progress.percent}%</span>
+          </div>
+        </div>
+
+        {/* 액션 버튼 */}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => setEditing(!editing)}
+            className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-200/60"
+            aria-label={`${project.title} 수정`}
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onArchive}
+            className="p-1.5 text-slate-500 hover:text-rose-700 rounded-lg hover:bg-rose-50"
+            aria-label={`${project.title} 보관`}
+          >
+            <Archive className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* 수정 폼 */}
+      {editing && (
+        <form
+          onSubmit={event => {
+            event.preventDefault();
+            if (title.trim()) saveProject();
+          }}
+          className="border-b border-slate-200 bg-amber-50/50 p-4 grid gap-2"
+        >
+          <input
+            value={title}
+            onChange={event => setTitle(event.target.value)}
+            className="mono-input h-10 text-sm font-bold"
+            placeholder="Project 이름"
+          />
+          <textarea
+            value={description}
+            onChange={event => setDescription(event.target.value)}
+            className="mono-input min-h-16 text-sm"
+            placeholder="Project 설명 (선택)"
+          />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setEditing(false)} className="px-3 py-1.5 text-xs font-bold text-slate-600">
+              취소
+            </button>
+            <button className="rounded-lg bg-emerald-700 px-4 py-1.5 text-xs font-bold text-white hover:bg-emerald-800">
+              저장
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* 2. Stage 및 Task 목록 (초간편 인라인 구조) */}
+      <div className="p-3 sm:p-4 space-y-3">
+        {stages.filter(stage => stage.status !== "archived").length ? (
+          <div className="space-y-3">
+            {stages
+              .filter(stage => stage.status !== "archived")
+              .map(stage => (
+                <CompactStageBlock
+                  key={stage.id}
+                  projectId={project.id}
+                  stage={stage}
+                  tasks={tasksByStage.get(stage.id) ?? []}
+                  onTaskStatus={onTaskStatus}
+                  onTaskArchive={onTaskArchive}
+                />
+              ))}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-dashed border-slate-200 p-3 text-center text-xs font-bold text-slate-500">
+            아직 Stage가 없습니다. 아래에서 Stage를 먼저 추가하세요.
+          </p>
+        )}
+
+        {/* 컴팩트 Stage 추가 인풋 */}
+        <form
+          onSubmit={event => {
+            event.preventDefault();
+            if (stageTitle.trim()) createStage.mutate({ projectId: project.id, title: stageTitle.trim() });
+          }}
+          className="flex gap-2 pt-1"
+        >
+          <input
+            value={stageTitle}
+            onChange={event => setStageTitle(event.target.value)}
+            className="mono-input h-9 text-xs font-semibold flex-1 bg-slate-50"
+            placeholder="+ 새 Stage 이름 추가 (예: 기획, 개발, 테스트...)"
+          />
+          <button
+            disabled={!stageTitle.trim() || createStage.isPending}
+            className="pressable h-9 shrink-0 rounded-xl bg-slate-200 px-3 text-xs font-bold text-slate-800 hover:bg-slate-300 disabled:opacity-40"
+          >
+            + Stage 추가
+          </button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+{/* 초간편 & 초압축 Stage 블록 (Task 입력 초간소화) */}
+function CompactStageBlock({
+  projectId,
+  stage,
+  tasks,
+  onTaskStatus,
+  onTaskArchive,
+}: {
+  projectId: number;
+  stage: StageItem;
+  tasks: TaskItem[];
+  onTaskStatus: (task: TaskItem, status: TaskStatus) => void;
+  onTaskArchive: (task: TaskItem) => void;
+}) {
+  const utils = trpc.useUtils();
+  const [taskTitle, setTaskTitle] = useState("");
+  const [nextAction, setNextAction] = useState("");
+  const [showNextAction, setShowNextAction] = useState(false);
+  const [open, setOpen] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(stage.title);
+
+  const createTask = trpc.workspace.createTask.useMutation({
+    onSuccess: () => {
+      setTaskTitle("");
+      setNextAction("");
+      setShowNextAction(false);
+      void utils.workspace.overview.invalidate();
+    },
+  });
+  const updateStage = trpc.workspace.updateStage.useMutation({
+    onSuccess: () => {
+      setEditing(false);
+      void utils.workspace.overview.invalidate();
+    },
+  });
+
+  const remainingCount = tasks.filter(t => t.status !== "done" && t.status !== "cancelled").length;
+
+  const saveStage = () =>
+    updateStage.mutate({
+      id: stage.id,
+      expectedRevision: stage.revision,
+      title: title.trim(),
+    });
+
+  const handleTaskSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (!taskTitle.trim()) return;
+    createTask.mutate({
+      projectId,
+      stageId: stage.id,
+      title: taskTitle.trim(),
+      nextAction: nextAction.trim() || null,
+      status: "planned",
+    });
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+      {/* Stage 타이틀 바 (한 줄 슬림) */}
+      <div className="flex items-center justify-between gap-2">
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-2 font-black text-slate-900 text-sm hover:text-emerald-800 text-left min-w-0"
+        >
+          <ChevronRight className={`h-4 w-4 text-slate-500 transition-transform ${open ? "rotate-90" : ""}`} />
+          <span className="truncate">{stage.title}</span>
+          <span className="rounded-md bg-slate-200 px-1.5 py-0.5 text-[11px] font-bold text-slate-700 shrink-0">
+            {remainingCount ? `남은 Task ${remainingCount}` : "완료됨"}
+          </span>
         </button>
-      </form>
-    </header>
-    <BulkArchivePanel projects={projects} stages={stages} tasks={tasks} onArchive={values => bulkArchive.mutate(values)} busy={bulkArchive.isPending} error={bulkArchive.error?.message} />
-    <ArchivedWorkspacePanel data={archivedWorkspace.data} onRestore={(entityType, item) => restoreArchivedItem.mutate({ entityType, id: item.id, expectedRevision: item.revision })} busy={restoreArchivedItem.isPending} />
-    <WorkspaceExportPanel />
-    {projects.filter(project => project.status === "active").length ? <div className="grid gap-5 xl:grid-cols-2">{projects.filter(project => project.status === "active").map(project => <ProjectBlock key={project.id} project={project} stages={stagesByProject.get(project.id) ?? []} tasksByStage={tasksByStage} tasks={tasks} todayTaskIds={todayTaskIds} onArchive={() => archiveProject.mutate({ id: project.id, expectedRevision: project.revision })} onTaskStatus={(task, status) => setTaskStatus.mutate({ id: task.id, expectedRevision: task.revision, status })} onTaskArchive={task => archiveTask.mutate({ id: task.id, expectedRevision: task.revision })} />)}</div> : <EmptyProjects />}
-  </div>;
-}
 
-function BulkArchivePanel({ projects, stages, tasks, onArchive, busy, error }: { projects: ProjectItem[]; stages: StageItem[]; tasks: TaskItem[]; onArchive: (values: { projectIds: number[]; stageIds: number[]; taskIds: number[] }) => void; busy: boolean; error?: string }) {
-  const [projectIds, setProjectIds] = useState<string[]>([]); const [stageIds, setStageIds] = useState<string[]>([]); const [taskIds, setTaskIds] = useState<string[]>([]);
-  const choose = (event: React.ChangeEvent<HTMLSelectElement>, setValues: (values: string[]) => void) => setValues(Array.from(event.target.selectedOptions, option => option.value));
-  const activeProjects = projects.filter(item => item.status === "active"); const activeStages = stages.filter(item => item.status !== "archived"); const activeTasks = tasks.filter(item => item.status !== "cancelled"); const selectedCount = projectIds.length + stageIds.length + taskIds.length;
-  return <section aria-label="일괄 보관" className="rounded-2xl border-2 border-amber-200 bg-amber-50/70 p-4 sm:p-5 shadow-sm">
-    <div className="flex flex-wrap items-start justify-between gap-2">
-      <div>
-        <p className="industrial-label text-amber-900 font-extrabold">Workspace cleanup</p>
-        <h2 className="industrial-title mt-1 text-2xl text-slate-950">선택 항목 보관</h2>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={() => setEditing(!editing)}
+            className="p-1 text-slate-400 hover:text-slate-800"
+            aria-label={`${stage.title} 수정`}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => updateStage.mutate({ id: stage.id, expectedRevision: stage.revision, status: "archived" })}
+            className="p-1 text-slate-400 hover:text-rose-600"
+            aria-label={`${stage.title} 보관`}
+          >
+            <Archive className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
-      <p className="text-sm font-semibold text-slate-700">삭제하지 않고 보관 상태로만 변경합니다.</p>
+
+      {/* Stage 이름 수정 폼 */}
+      {editing && (
+        <form
+          onSubmit={event => {
+            event.preventDefault();
+            if (title.trim()) saveStage();
+          }}
+          className="flex gap-2 mt-2"
+        >
+          <input
+            value={title}
+            onChange={event => setTitle(event.target.value)}
+            className="mono-input h-8 text-xs font-bold flex-1"
+          />
+          <button className="rounded-lg bg-emerald-700 px-3 text-xs font-bold text-white">저장</button>
+          <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-500">
+            취소
+          </button>
+        </form>
+      )}
+
+      {/* Task 리스트 & 초간편 1줄 입력창 */}
+      {open && (
+        <div className="mt-2 space-y-1.5 pl-2 sm:pl-3 border-l-2 border-slate-200">
+          {/* 태스크 목록 */}
+          {tasks
+            .filter(task => task.status !== "cancelled")
+            .map(task => (
+              <CompactTaskLine key={task.id} task={task} onStatus={onTaskStatus} onArchive={onTaskArchive} />
+            ))}
+
+          {/* 초간편 태스크 추가 폼 (엔터 치면 즉시 생성) */}
+          <form onSubmit={handleTaskSubmit} className="pt-1.5">
+            <div className="flex gap-1.5 items-center">
+              <input
+                value={taskTitle}
+                onChange={event => setTaskTitle(event.target.value)}
+                className="mono-input h-8 text-xs font-bold flex-1 bg-white border-emerald-300 focus:border-emerald-600"
+                placeholder="➕ 새 Task 입력 후 Enter (예: 머티리얼 선택, UI 배치...)"
+              />
+              {!showNextAction ? (
+                <button
+                  type="button"
+                  onClick={() => setShowNextAction(true)}
+                  className="h-8 px-2 text-[11px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg shrink-0"
+                >
+                  + 다음 행동
+                </button>
+              ) : (
+                <input
+                  value={nextAction}
+                  onChange={event => setNextAction(event.target.value)}
+                  className="mono-input h-8 text-xs font-semibold w-32 sm:w-44 bg-white"
+                  placeholder="다음 행동 입력"
+                />
+              )}
+              <button
+                type="submit"
+                disabled={!taskTitle.trim() || createTask.isPending}
+                className="pressable h-8 px-3 rounded-lg bg-emerald-700 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-40 shrink-0"
+              >
+                추가
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
-    <div className="mt-4 grid gap-3 sm:grid-cols-3">
-      <label className="text-sm font-bold text-slate-900">Project
-        <select multiple value={projectIds} onChange={event => choose(event, setProjectIds)} aria-label="일괄 보관 Project 선택" className="mono-input mt-1.5 h-28 w-full p-2.5 text-sm font-medium">{activeProjects.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select>
-      </label>
-      <label className="text-sm font-bold text-slate-900">Stage
-        <select multiple value={stageIds} onChange={event => choose(event, setStageIds)} aria-label="일괄 보관 Stage 선택" className="mono-input mt-1.5 h-28 w-full p-2.5 text-sm font-medium">{activeStages.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select>
-      </label>
-      <label className="text-sm font-bold text-slate-900">Task
-        <select multiple value={taskIds} onChange={event => choose(event, setTaskIds)} aria-label="일괄 보관 Task 선택" className="mono-input mt-1.5 h-28 w-full p-2.5 text-sm font-medium">{activeTasks.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select>
-      </label>
-    </div>
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-      <p aria-live="polite" className="text-sm font-bold text-slate-800">{selectedCount ? `${selectedCount}개 선택됨` : "보관할 항목을 선택하세요."}</p>
-      <button type="button" onClick={() => onArchive({ projectIds: projectIds.map(Number), stageIds: stageIds.map(Number), taskIds: taskIds.map(Number) })} disabled={!selectedCount || busy} className="pressable inline-flex h-10 items-center gap-2 rounded-xl bg-amber-600 px-4 text-sm font-extrabold text-white hover:bg-amber-700 disabled:opacity-50 shadow-sm">
-        <Archive className="h-4 w-4" />{busy ? "보관 중..." : "선택 항목 보관"}
-      </button>
-    </div>
-    {error ? <p role="alert" className="mt-2 text-sm font-bold text-rose-700">{error}</p> : null}
-  </section>;
+  );
 }
 
-function EmptyProjects() { return <section className="block-shadow border-2 border-slate-200 bg-white p-6 sm:p-8"><span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-100 text-emerald-800 font-bold"><SquareStack className="h-5 w-5" /></span><h2 className="industrial-title mt-4 text-3xl text-slate-950">첫 Project를<br />만드세요.</h2><p className="mt-3 max-w-xl text-base font-semibold leading-relaxed text-slate-700">Project를 만들면 Stage와 Task를 단계적으로 연결할 수 있습니다. Today에서는 필요한 맥락만 작게 표시됩니다.</p></section>; }
+{/* 초슬림 태스크 라인 */}
+function CompactTaskLine({
+  task,
+  onStatus,
+  onArchive,
+}: {
+  task: TaskItem;
+  onStatus: (task: TaskItem, status: TaskStatus) => void;
+  onArchive: (task: TaskItem) => void;
+}) {
+  const utils = trpc.useUtils();
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(task.title);
+  const [nextAction, setNextAction] = useState(task.nextAction ?? "");
 
-function ProjectBlock({ project, stages, tasksByStage, tasks, todayTaskIds, onArchive, onTaskStatus, onTaskArchive }: { project: ProjectItem; stages: StageItem[]; tasksByStage: Map<number, TaskItem[]>; tasks: TaskItem[]; todayTaskIds: Set<number>; onArchive: () => void; onTaskStatus: (task: TaskItem, status: TaskStatus) => void; onTaskArchive: (task: TaskItem) => void }) {
-  const utils = trpc.useUtils(); const [stageTitle, setStageTitle] = useState(""); const [editing, setEditing] = useState(false); const [title, setTitle] = useState(project.title); const [description, setDescription] = useState(project.description ?? ""); const [conflict, setConflict] = useState(false);
-  const createStage = trpc.workspace.createStage.useMutation({ onSuccess: () => { setStageTitle(""); void utils.workspace.overview.invalidate(); } });
-  const updateProject = trpc.workspace.updateProject.useMutation({ onSuccess: () => { setConflict(false); setEditing(false); void utils.workspace.overview.invalidate(); }, onError: error => { if (isConflict(error)) setConflict(true); else toast.error(error.message); void utils.workspace.overview.invalidate(); } });
-  const updateStage = trpc.workspace.updateStage.useMutation({ onSuccess: () => void utils.workspace.overview.invalidate(), onError: error => { toast.error(error.message); void utils.workspace.overview.invalidate(); } });
-  const progress = getProjectProgress(project.id, tasks, todayTaskIds); const nextStage = getProjectNextStage(stages, tasksByStage); const nextStageRevision = nextStage ? stages.find(stage => stage.id === nextStage.stage.id)?.revision : undefined;
-  const saveProject = () => updateProject.mutate({ id: project.id, expectedRevision: project.revision, title: title.trim(), description: description.trim() || null });
-  return <section className="relative overflow-hidden rounded-3xl border border-violet-100 bg-white/90"><div className="absolute right-0 top-0 h-20 w-20 rounded-bl-3xl bg-violet-100" /><div className="relative border-b border-violet-100 p-5"><div className="flex items-start justify-between gap-4"><div><p className="industrial-label text-violet-400">Project</p><h2 className="industrial-title mt-2 text-3xl text-violet-950">{project.title}</h2>{project.description && <p className="mt-2 text-sm text-violet-600">{project.description}</p>}</div><div className="flex gap-1"><button onClick={() => setEditing(current => !current)} className="rounded-lg p-2 text-violet-400 hover:bg-violet-50 hover:text-violet-700" aria-label={`${project.title} 수정`}><Pencil className="h-4 w-4" /></button><button onClick={onArchive} className="rounded-lg p-2 text-violet-400 hover:bg-violet-50 hover:text-violet-700" aria-label={`${project.title} 보관`}><Archive className="h-4 w-4" /></button></div></div><ProjectProgressSummary projectTitle={project.title} completed={progress.completed} total={progress.total} percent={progress.percent} todayTaskCount={progress.todayTaskCount} />{nextStage && <ProjectNextStageSummary projectTitle={project.title} stageTitle={nextStage.stage.title} message={nextStage.message} canComplete={nextStage.canComplete} onComplete={() => updateStage.mutate({ id: nextStage.stage.id, expectedRevision: nextStageRevision, status: "done" })} />}{editing && <form onSubmit={event => { event.preventDefault(); if (title.trim()) saveProject(); }} className="mt-4 grid gap-2"><input value={title} onChange={event => setTitle(event.target.value)} className="mono-input h-10 text-sm" aria-label="Project 이름" /><textarea value={description} onChange={event => setDescription(event.target.value)} className="mono-input min-h-20 resize-y text-sm" aria-label="Project 설명" placeholder="Project 설명 (선택)" />{conflict ? <ConflictResolutionNotice entityLabel="Project" latest={`${project.title}${project.description ? ` · ${project.description}` : ""}`} proposed={`${title}${description ? ` · ${description}` : ""}`} onRetry={saveProject} onDismiss={() => { setConflict(false); setTitle(project.title); setDescription(project.description ?? ""); }} /> : null}<div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(false)} className="h-9 px-3 text-xs font-bold text-violet-500 underline">취소</button><button className="pressable h-9 rounded-lg bg-violet-500 px-3 text-xs font-bold text-white">저장</button></div></form>}</div><div className="p-4 sm:p-5">{stages.length ? <div className="space-y-4">{stages.filter(stage => stage.status !== "archived").map(stage => <StageBlock key={stage.id} projectId={project.id} stage={stage} tasks={tasksByStage.get(stage.id) ?? []} onTaskStatus={onTaskStatus} onTaskArchive={onTaskArchive} />)}</div> : <p className="rounded-xl border border-dashed border-violet-200 bg-violet-50/50 p-4 text-sm text-violet-500">아직 Stage가 없습니다.</p>}<form onSubmit={event => { event.preventDefault(); if (stageTitle.trim()) createStage.mutate({ projectId: project.id, title: stageTitle.trim() }); }} className="mt-5 flex gap-2"><input value={stageTitle} onChange={event => setStageTitle(event.target.value)} className="mono-input h-10 text-sm" placeholder="새 Stage" /><button className="pressable flex h-10 shrink-0 items-center gap-1 rounded-xl bg-violet-100 px-3 text-xs font-bold text-violet-700 hover:bg-violet-200"><Plus className="h-3.5 w-3.5" /> Stage</button></form></div></section>;
+  const updateTask = trpc.workspace.updateTask.useMutation({
+    onSuccess: () => {
+      setEditing(false);
+      void utils.workspace.overview.invalidate();
+    },
+  });
+
+  const saveTask = () =>
+    updateTask.mutate({
+      id: task.id,
+      expectedRevision: task.revision,
+      title: title.trim(),
+      nextAction: nextAction.trim() || null,
+    });
+
+  const isDone = task.status === "done";
+
+  return (
+    <div className="group flex items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 border border-slate-100 shadow-2xs hover:border-slate-300 transition-colors">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <button
+          onClick={() => onStatus(task, isDone ? "planned" : "done")}
+          className="text-slate-400 hover:text-emerald-700 shrink-0"
+          aria-label={`${task.title} 상태 변경`}
+        >
+          {isDone ? (
+            <span className="grid h-4 w-4 place-items-center rounded-full bg-emerald-700 text-[10px] font-black text-white">
+              ✓
+            </span>
+          ) : (
+            <Circle className="h-4 w-4 text-slate-300 hover:text-emerald-600" />
+          )}
+        </button>
+
+        <span
+          className={`text-xs font-bold truncate ${
+            isDone ? "text-slate-400 line-through" : "text-slate-900"
+          }`}
+        >
+          {task.title}
+        </span>
+
+        {task.nextAction && (
+          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded truncate max-w-44 hidden sm:inline">
+            👉 {task.nextAction}
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        {task.status !== "in_progress" && !isDone && (
+          <button
+            onClick={() => onStatus(task, "in_progress")}
+            className="p-1 text-slate-400 hover:text-emerald-700"
+            title="진행 중으로 변경"
+          >
+            <Play className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <button
+          onClick={() => setEditing(!editing)}
+          className="p-1 text-slate-400 hover:text-slate-800"
+          title="수정"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={() => onArchive(task)}
+          className="p-1 text-slate-400 hover:text-rose-600"
+          title="보관"
+        >
+          <Archive className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* 수정 모달/인라인 */}
+      {editing && (
+        <form
+          onSubmit={event => {
+            event.preventDefault();
+            if (title.trim()) saveTask();
+          }}
+          className="absolute inset-x-2 z-10 flex gap-1.5 bg-white p-2 rounded-lg border-2 border-emerald-500 shadow-md"
+        >
+          <input
+            value={title}
+            onChange={event => setTitle(event.target.value)}
+            className="mono-input h-7 text-xs font-bold flex-1"
+          />
+          <input
+            value={nextAction}
+            onChange={event => setNextAction(event.target.value)}
+            className="mono-input h-7 text-xs w-32"
+            placeholder="다음 행동"
+          />
+          <button className="rounded bg-emerald-700 px-2.5 text-xs font-bold text-white">저장</button>
+          <button type="button" onClick={() => setEditing(false)} className="text-xs text-slate-500 px-1">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </form>
+      )}
+    </div>
+  );
 }
 
-function StageBlock({ projectId, stage, tasks, onTaskStatus, onTaskArchive }: { projectId: number; stage: StageItem; tasks: TaskItem[]; onTaskStatus: (task: TaskItem, status: TaskStatus) => void; onTaskArchive: (task: TaskItem) => void }) {
-  const utils = trpc.useUtils(); const [taskTitle, setTaskTitle] = useState(""); const [nextAction, setNextAction] = useState(""); const [open, setOpen] = useState(true); const [editing, setEditing] = useState(false); const [title, setTitle] = useState(stage.title); const [conflict, setConflict] = useState(false);
-  const createTask = trpc.workspace.createTask.useMutation({ onSuccess: () => { setTaskTitle(""); setNextAction(""); void utils.workspace.overview.invalidate(); } });
-  const updateStage = trpc.workspace.updateStage.useMutation({ onSuccess: () => { setConflict(false); setEditing(false); void utils.workspace.overview.invalidate(); }, onError: error => { if (isConflict(error)) setConflict(true); else toast.error(error.message); void utils.workspace.overview.invalidate(); } });
-  const guide = getStageGuide(stage.status, tasks); const saveStage = () => updateStage.mutate({ id: stage.id, expectedRevision: stage.revision, title: title.trim() });
-  return <div className="rounded-2xl border border-emerald-100 bg-emerald-50/55 p-4"><div className="flex w-full items-start justify-between gap-3"><button onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 items-center justify-between text-left"><span><span className="industrial-label text-emerald-500">Stage</span><span className="mt-1 block font-bold text-violet-950">{stage.title}</span></span><ChevronDown className={`h-4 w-4 text-emerald-500 transition-transform ${open ? "" : "-rotate-90"}`} /></button><div className="flex"><button onClick={() => setEditing(current => !current)} className="p-1.5 text-emerald-500 hover:text-emerald-700" aria-label={`${stage.title} 수정`}><Pencil className="h-3.5 w-3.5" /></button><button onClick={() => updateStage.mutate({ id: stage.id, expectedRevision: stage.revision, status: "archived" })} className="p-1.5 text-emerald-500 hover:text-emerald-700" aria-label={`${stage.title} 보관`}><Archive className="h-3.5 w-3.5" /></button></div></div><StageProgressHint stageTitle={stage.title} message={guide.message} canComplete={guide.canComplete} onComplete={() => updateStage.mutate({ id: stage.id, expectedRevision: stage.revision, status: "done" })} />{editing && <form onSubmit={event => { event.preventDefault(); if (title.trim()) saveStage(); }} className="mt-3 grid gap-2"><div className="flex gap-2"><input value={title} onChange={event => setTitle(event.target.value)} className="mono-input h-9 flex-1 text-xs" aria-label="Stage 이름" /><button className="pressable h-9 rounded-lg bg-emerald-500 px-3 text-xs font-bold text-white"><Check className="h-3.5 w-3.5" /></button><button type="button" onClick={() => setEditing(false)} className="h-9 px-2" aria-label="수정 취소"><X className="h-3.5 w-3.5" /></button></div>{conflict ? <ConflictResolutionNotice entityLabel="Stage" latest={stage.title} proposed={title} onRetry={saveStage} onDismiss={() => { setConflict(false); setTitle(stage.title); }} /> : null}</form>}{open && <div className="mt-4 space-y-2">{tasks.filter(task => task.status !== "cancelled").map(task => <TaskLine key={task.id} task={task} onStatus={onTaskStatus} onArchive={onTaskArchive} />)}<form onSubmit={event => { event.preventDefault(); if (taskTitle.trim()) createTask.mutate({ projectId, stageId: stage.id, title: taskTitle.trim(), nextAction: nextAction.trim() || null, status: "planned" }); }} className="grid gap-2 border-t border-emerald-100 pt-3 sm:grid-cols-[1fr_1fr_auto]"><input value={taskTitle} onChange={event => setTaskTitle(event.target.value)} className="mono-input h-9 text-xs" placeholder="새 Task" /><input value={nextAction} onChange={event => setNextAction(event.target.value)} className="mono-input h-9 text-xs" placeholder="다음 행동 (선택)" /><button className="pressable h-9 rounded-lg bg-emerald-100 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-200">추가</button></form></div>}</div>;
-}
-
-function TaskLine({ task, onStatus, onArchive }: { task: TaskItem; onStatus: (task: TaskItem, status: TaskStatus) => void; onArchive: (task: TaskItem) => void }) {
-  const utils = trpc.useUtils(); const [editing, setEditing] = useState(false); const [title, setTitle] = useState(task.title); const [nextAction, setNextAction] = useState(task.nextAction ?? ""); const [conflict, setConflict] = useState(false);
-  const updateTask = trpc.workspace.updateTask.useMutation({ onSuccess: () => { setConflict(false); setEditing(false); void utils.workspace.overview.invalidate(); }, onError: error => { if (isConflict(error)) setConflict(true); else toast.error(error.message); void utils.workspace.overview.invalidate(); } });
-  const saveTask = () => updateTask.mutate({ id: task.id, expectedRevision: task.revision, title: title.trim(), nextAction: nextAction.trim() || null });
-  return <div className="group bg-white p-3"><div className="flex items-start gap-3"><button onClick={() => onStatus(task, task.status === "done" ? "planned" : "done")} aria-label={`${task.title} ${task.status === "done" ? "다시 열기" : "완료"}`} className="mt-0.5 rounded-full p-0.5 hover:bg-neutral-200">{task.status === "done" ? <span className="grid h-4 w-4 place-items-center rounded-full bg-neutral-950 text-white">✓</span> : <Circle className="h-4 w-4" />}</button><div className="min-w-0 flex-1"><p className={`text-sm font-bold ${task.status === "done" ? "text-neutral-400 line-through" : ""}`}>{task.title}</p>{task.nextAction && <p className="mt-1 truncate text-xs text-neutral-500">다음: {task.nextAction}</p>}</div>{task.status !== "in_progress" && task.status !== "done" && <button onClick={() => onStatus(task, "in_progress")} className="hidden p-1 group-hover:block" aria-label={`${task.title} 시작`}><Play className="h-3.5 w-3.5" /></button>}<button onClick={() => setEditing(current => !current)} className="p-1 text-neutral-400 hover:text-neutral-950" aria-label={`${task.title} 수정`}><Pencil className="h-3.5 w-3.5" /></button><button onClick={() => onArchive(task)} className="p-1 text-neutral-400 hover:text-neutral-950" aria-label={`${task.title} 보관`}><Archive className="h-3.5 w-3.5" /></button></div>{editing && <form onSubmit={event => { event.preventDefault(); if (title.trim()) saveTask(); }} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><input value={title} onChange={event => setTitle(event.target.value)} className="mono-input h-9 text-xs" aria-label="Task 이름" /><input value={nextAction} onChange={event => setNextAction(event.target.value)} className="mono-input h-9 text-xs" aria-label="다음 행동" placeholder="다음 행동" /><button className="pressable h-9 bg-neutral-950 px-3 text-xs font-bold text-white">저장</button>{conflict ? <div className="sm:col-span-3"><ConflictResolutionNotice entityLabel="Task" latest={`${task.title}${task.nextAction ? ` · ${task.nextAction}` : ""}`} proposed={`${title}${nextAction ? ` · ${nextAction}` : ""}`} onRetry={saveTask} onDismiss={() => { setConflict(false); setTitle(task.title); setNextAction(task.nextAction ?? ""); }} /></div> : null}</form>}</div>;
+function EmptyProjects() {
+  return (
+    <section className="border-2 border-dashed border-slate-200 bg-white p-6 rounded-2xl text-center">
+      <SquareStack className="h-8 w-8 text-slate-400 mx-auto" />
+      <h2 className="mt-2 text-xl font-black text-slate-900">첫 Project를 만드세요.</h2>
+      <p className="mt-1 text-xs font-semibold text-slate-600">
+        상단 입력창에서 프로젝트 이름을 넣고 [생성]을 누르면 즉시 시작됩니다.
+      </p>
+    </section>
+  );
 }
