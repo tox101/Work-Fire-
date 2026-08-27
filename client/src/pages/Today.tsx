@@ -104,22 +104,42 @@ export default function Today() {
 
         <aside className="relative overflow-hidden rounded-2xl border border-emerald-100 bg-[#fbfffc] p-4 sm:p-5">
           <div className="absolute right-0 top-0 h-16 w-16 rounded-bl-2xl bg-emerald-100/70" />
-          <p className="industrial-label relative text-emerald-500">Today / 일정</p>
-          <div className="relative mt-4 space-y-1">
+          <p className="industrial-label relative text-emerald-700 font-bold">Today / 일정</p>
+          <div className="relative mt-4 space-y-1.5">
             {data?.schedules.length ? data.schedules.map(item => {
               const task = item.taskId ? taskById.get(item.taskId) : undefined;
               const project = task?.projectId ? projectById.get(task.projectId) : undefined;
               const done = item.status === "completed";
               const isActive = item.status === "in_progress";
               const time = item.plannedStartAt ? new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(item.plannedStartAt) : "시간 미정";
-              return <article key={item.id} className={`group grid grid-cols-[62px_1fr_auto] items-start gap-2 rounded-lg px-2 py-2 ${isActive ? "bg-emerald-500 text-white" : "hover:bg-emerald-50"}`}>
-                <span className={`text-xs font-bold ${isActive ? "text-white" : "text-neutral-500"}`}>{time}</span>
-                <div><p className={`font-bold ${done ? "line-through opacity-45" : ""}`}>{item.title}</p>{task ? <p className={`mt-1 text-xs ${isActive ? "text-neutral-400" : "text-neutral-500"}`}>{project?.title ?? "Project"}{task ? ` / ${task.title}` : ""}</p> : <p className={`mt-1 text-xs ${isActive ? "text-neutral-500" : "text-neutral-400"}`}>개인 일정</p>}</div>
-                <div className="flex gap-1">{done ? <Check className="h-4 w-4" /> : <button aria-label={`${item.title} ${isActive ? "완료" : "시작"}`} onClick={() => setScheduleStatus.mutate({ id: item.id, expectedRevision: item.revision, status: isActive ? "completed" : "in_progress" })} className="mt-0.5 rounded-full p-1 hover:bg-white hover:text-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current">{isActive ? <Check className="h-4 w-4" /> : <Circle className="h-4 w-4" />}</button>}<button aria-label={`${item.title} 일정 수정`} onClick={() => { setEditingSchedule({ id: item.id, revision: item.revision, title: item.title, taskId: item.taskId, plannedStartAt: item.plannedStartAt }); setShowSchedule(true); }} className={`rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${isActive ? "hover:bg-white hover:text-neutral-950" : "hover:bg-neutral-200"}`}><Pencil className="h-3.5 w-3.5" /></button></div>
+              return <article key={item.id} className={`group grid grid-cols-[68px_1fr_auto] items-start gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${isActive ? "bg-emerald-600 text-white shadow-sm" : "hover:bg-emerald-50 bg-white/70 border border-slate-100"}`}>
+                <span className={`text-xs font-bold pt-0.5 ${isActive ? "text-white" : "text-slate-600 font-mono"}`}>{time}</span>
+                <div>
+                  <p className={`text-sm font-bold leading-snug ${done ? "line-through opacity-45" : isActive ? "text-white" : "text-slate-800"}`}>{item.title}</p>
+                  {task ? (
+                    <p className={`mt-1 text-xs font-semibold ${isActive ? "text-emerald-100" : "text-slate-600"}`}>
+                      {project?.title ?? "Project"}{task ? ` › ${task.title}` : ""}
+                    </p>
+                  ) : (
+                    <p className={`mt-1 text-xs font-semibold ${isActive ? "text-emerald-200" : "text-slate-500"}`}>개인 일정</p>
+                  )}
+                </div>
+                <div className="flex gap-1 pt-0.5">
+                  {done ? (
+                    <Check className="h-5 w-5 text-emerald-600" />
+                  ) : (
+                    <button aria-label={`${item.title} ${isActive ? "완료" : "시작"}`} onClick={() => setScheduleStatus.mutate({ id: item.id, expectedRevision: item.revision, status: isActive ? "completed" : "in_progress" })} className="rounded-full p-1 hover:bg-white hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current">
+                      {isActive ? <Check className="h-5 w-5 text-white" /> : <Circle className="h-5 w-5 text-slate-400 hover:text-emerald-600" />}
+                    </button>
+                  )}
+                  <button aria-label={`${item.title} 일정 수정`} onClick={() => { setEditingSchedule({ id: item.id, revision: item.revision, title: item.title, taskId: item.taskId, plannedStartAt: item.plannedStartAt }); setShowSchedule(true); }} className={`rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${isActive ? "hover:bg-white/20 text-white" : "hover:bg-slate-200 text-slate-500"}`}>
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                </div>
               </article>;
             }) : <EmptySchedule onAdd={() => setShowSchedule(true)} />}
           </div>
-          {data?.schedules.length ? <button onClick={() => { setEditingSchedule(null); setScheduleConflict(false); setShowSchedule(true); }} className="mt-3 flex items-center gap-1.5 text-sm font-bold text-emerald-600 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"><Plus className="h-4 w-4" /> 일정 추가</button> : null}
+          {data?.schedules.length ? <button onClick={() => { setEditingSchedule(null); setScheduleConflict(false); setShowSchedule(true); }} className="mt-4 flex items-center gap-1.5 text-sm font-bold text-emerald-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"><Plus className="h-4 w-4" /> 일정 추가</button> : null}
         </aside>
       </section>
 

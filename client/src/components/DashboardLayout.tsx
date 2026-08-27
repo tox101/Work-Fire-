@@ -109,7 +109,7 @@ function locationMatches(path: string, location: string) {
 
 function MobileNavigation({ location, onNavigate, onCapture }: { location: string; onNavigate: (to: string) => void; onCapture: () => void }) {
   return (
-    <nav aria-label="모바일 주요 메뉴" className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-6 border-t border-violet-100 bg-white/95 text-violet-950 backdrop-blur md:hidden">
+    <nav aria-label="모바일 주요 메뉴" className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-6 border-t border-emerald-100 bg-white/95 text-slate-900 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] backdrop-blur md:hidden">
       {navigation.map(item => {
         const active = locationMatches(item.path, location);
         const Icon = item.icon;
@@ -123,8 +123,8 @@ function MobileNavigation({ location, onNavigate, onCapture }: { location: strin
           Capture: "작성",
         };
         return (
-          <button key={item.path} onClick={() => primary ? onCapture() : onNavigate(item.path)} className={`flex flex-col items-center justify-center gap-1 text-[10px] font-bold ${active && !primary ? "text-violet-600" : "text-violet-400 hover:text-violet-700"} ${primary ? "border-x border-violet-100" : ""}`}>
-            {primary ? <span className="grid h-7 w-7 place-items-center rounded-full bg-violet-500 text-white shadow-sm"><Plus className="h-3.5 w-3.5" /></span> : <Icon className="h-3.5 w-3.5" />}
+          <button key={item.path} onClick={() => primary ? onCapture() : onNavigate(item.path)} className={`flex flex-col items-center justify-center gap-1 text-[11px] font-bold transition-colors ${active && !primary ? "text-emerald-700 font-extrabold" : "text-slate-500 hover:text-slate-900"} ${primary ? "border-x border-slate-100" : ""}`}>
+            {primary ? <span className="grid h-8 w-8 place-items-center rounded-full bg-emerald-600 text-white shadow"><Plus className="h-4 w-4" /></span> : <Icon className="h-4 w-4" />}
             <span>{labelMap[item.label] ?? item.label}</span>
           </button>
         );

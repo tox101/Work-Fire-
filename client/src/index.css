@@ -65,7 +65,16 @@
 
 * { border-color: var(--border); }
 
-html { background: #f8fbf7; }
+html {
+  background: #f8fbf7;
+  font-size: 16px;
+}
+
+@media (max-width: 640px) {
+  html {
+    font-size: 16.5px; /* 모바일에서 텍스트를 더 큼직하게 스케일업 */
+  }
+}
 
 body {
   margin: 0;
@@ -74,9 +83,13 @@ body {
     radial-gradient(circle at 1% 2%, rgba(204, 232, 211, .54), transparent 25%),
     radial-gradient(circle at 96% 12%, rgba(223, 241, 226, .68), transparent 25%),
     #f8fbf7;
-  color: #25452f;
-  font-family: Pretendard, "Noto Sans KR", Inter, Arial, sans-serif;
-  text-rendering: geometricPrecision;
+  color: #1a3522;
+  font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
 }
 
 button, input, textarea, select { font: inherit; }
@@ -84,18 +97,19 @@ button { cursor: pointer; }
 button:focus-visible, a:focus-visible { outline: 2px solid #4d9560; outline-offset: 3px; }
 
 .industrial-title {
-  font-family: Pretendard, "Noto Sans KR", Inter, sans-serif;
+  font-family: "Pretendard Variable", Pretendard, sans-serif;
   font-weight: 800;
-  letter-spacing: -0.055em;
-  line-height: 1.08;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+  color: #122818;
   overflow-wrap: anywhere;
 }
 
 .industrial-label {
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: .12em;
-  line-height: 1.2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  line-height: 1.3;
   text-transform: uppercase;
 }
 
