@@ -9,6 +9,7 @@ import { deriveTaskStateChange, TaskStatus } from "../domain/taskState";
 
 const taskStatus = z.enum(["inbox", "planned", "in_progress", "done", "on_hold", "cancelled"]);
 const scheduleStatus = z.enum(["planned", "in_progress", "completed", "cancelled"]);
+const scheduleType = z.enum(["task", "meeting", "personal", "review"]);
 const optionalTaskId = z.preprocess(value => value === "" ? null : value, z.coerce.number().int().positive().nullable());
 const taskInput = z.object({
   title: z.string().trim().min(1).max(220),
@@ -420,17 +421,17 @@ export const workspaceRouter = router({
     return { success: true };
   }),
 
-  createSchedule: protectedProcedure.input(z.object({ title: z.string().trim().min(1).max(220), taskId: optionalTaskId.optional(), plannedStartAt: z.date().nullable().optional(), plannedEndAt: z.date().nullable().optional(), notes: z.string().max(4000).nullable().optional() })).mutation(async ({ ctx, input }) => {
+  createSchedule: protectedProcedure.input(z.object({ title: z.string().trim().min(1).max(220), taskId: optionalTaskId.optional(), scheduleType: scheduleType.optional(), scheduleFlags: z.array(z.string().max(40)).max(12).optional(), plannedStartAt: z.date().nullable().optional(), plannedEndAt: z.date().nullable().optional(), notes: z.string().max(4000).nullable().optional() })).mutation(async ({ ctx, input }) => {
     const db = await databaseOrThrow();
     const taskId = input.taskId || null;
     await assertOptionalLinks(ctx.user.id, { taskId });
-    const [created] = await db.insert(schedules).values({ userId: ctx.user.id, title: input.title, taskId, plannedStartAt: input.plannedStartAt ?? null, plannedEndAt: input.plannedEndAt ?? null, notes: input.notes ?? null }).$returningId();
+    const [created] = await db.insert(schedules).values({ userId: ctx.user.id, title: input.title, taskId, scheduleType: input.scheduleType ?? "task", scheduleFlags: input.scheduleFlags ?? [], plannedStartAt: input.plannedStartAt ?? null, plannedEndAt: input.plannedEndAt ?? null, notes: input.notes ?? null }).$returningId();
     const [schedule] = await db.select().from(schedules).where(and(eq(schedules.id, created.id), eq(schedules.userId, ctx.user.id))).limit(1);
     await addHistory({ userId: ctx.user.id, entityType: "Schedule", entityId: created.id, taskId, eventType: "created", afterData: { title: input.title, plannedStartAt: input.plannedStartAt?.toISOString() ?? null } });
     return schedule;
   }),
 
-  updateSchedule: protectedProcedure.input(z.object({ id: z.number().int().positive(), expectedRevision: z.number().int().positive().optional(), title: z.string().trim().min(1).max(220).optional(), taskId: optionalTaskId.optional(), plannedStartAt: z.date().nullable().optional(), plannedEndAt: z.date().nullable().optional(), notes: z.string().max(4000).nullable().optional() })).mutation(async ({ ctx, input }) => {
+  updateSchedule: protectedProcedure.input(z.object({ id: z.number().int().positive(), expectedRevision: z.number().int().positive().optional(), title: z.string().trim().min(1).max(220).optional(), taskId: optionalTaskId.optional(), scheduleType: scheduleType.optional(), scheduleFlags: z.array(z.string().max(40)).max(12).optional(), plannedStartAt: z.date().nullable().optional(), plannedEndAt: z.date().nullable().optional(), notes: z.string().max(4000).nullable().optional() })).mutation(async ({ ctx, input }) => {
     const db = await databaseOrThrow();
     const [existing] = await db.select().from(schedules).where(and(eq(schedules.id, input.id), eq(schedules.userId, ctx.user.id))).limit(1);
     await assertOwned(existing, ctx.user.id, "Schedule");
