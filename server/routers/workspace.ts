@@ -442,6 +442,14 @@ export const workspaceRouter = router({
     return { success: true };
   }),
 
+  deleteSchedule: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await databaseOrThrow();
+    const [existing] = await db.select().from(schedules).where(and(eq(schedules.id, input.id), eq(schedules.userId, ctx.user.id))).limit(1);
+    await assertOwned(existing, ctx.user.id, "Schedule");
+    await db.delete(schedules).where(and(eq(schedules.id, input.id), eq(schedules.userId, ctx.user.id)));
+    return { success: true } as const;
+  }),
+
   setScheduleStatus: protectedProcedure.input(z.object({ id: z.number().int().positive(), expectedRevision: z.number().int().positive().optional(), status: scheduleStatus })).mutation(async ({ ctx, input }) => {
     const db = await databaseOrThrow();
     const [existing] = await db.select().from(schedules).where(and(eq(schedules.id, input.id), eq(schedules.userId, ctx.user.id))).limit(1);
