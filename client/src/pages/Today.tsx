@@ -1,108 +1,139 @@
-import {
-  Bell,
-  BellRing,
-  Calendar,
-  Check,
-  Circle,
-  Clock3,
-  Coffee,
-  Pause,
-  Pencil,
-  Play,
-  Plus,
-  SquarePen,
-  Volume2,
-  Wrench,
-  X,
-  Zap,
-} from "lucide-react";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Circle, Pencil, Plus, SquarePen, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { CapturePanel } from "@/components/CapturePanel";
-import { PinnedRecordSummary, RecentCaptureSummary, SuggestedTaskSummary, WeeklySummary } from "@/components/WorkspaceInsights";
-import { playNotificationSound, requestNotificationPermission, sendWebNotification } from "@/lib/notification";
 import { formatMinutesToHuman, parseTimeToMinutes } from "@/lib/timeParser";
-import { getSuggestedTask } from "@/lib/workspaceSummary";
 import { trpc } from "@/lib/trpc";
+import { createScheduleOutboxId, listPendingScheduleOperations, removePendingScheduleOperation, savePendingScheduleOperation, setPendingScheduleOperationError } from "@/lib/scheduleOutbox";
 
 type ScheduleCategory = "project" | "daily" | "urgent";
 
-function dateHeading() {
-  return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(new Date());
+type ScheduleLike = {
+  id: number;
+  title: string;
+  taskId: number | null;
+  status: "planned" | "in_progress" | "completed" | "cancelled";
+  revision: number;
+  scheduleType?: "task" | "meeting" | "personal" | "review";
+  scheduleFlags?: string[];
+  tags?: string[];
+  plannedStartAt: Date | string | null;
+  plannedEndAt: Date | string | null;
+  notes: string | null;
+};
+
+function dateHeading(day: Date) {
+  return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(day);
 }
 
 function parseScheduleNotes(notes: string | null | undefined): { category: ScheduleCategory; duration: number; breakTime: number } {
   if (!notes) return { category: "project", duration: 60, breakTime: 0 };
   try {
-    const data = JSON.parse(notes);
+    const value = JSON.parse(notes);
     return {
-      category: data.category ?? "project",
-      duration: data.duration ?? 60,
-      breakTime: data.breakTime ?? 0,
+      category: value.category === "daily" || value.category === "urgent" ? value.category : "project",
+      duration: Number(value.duration) || 60,
+      breakTime: Number(value.breakTime) || 0,
     };
   } catch {
     return { category: "project", duration: 60, breakTime: 0 };
   }
 }
 
+function formatTime(value: Date | string | null) {
+  if (!value) return "시간 미정";
+  return new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
+}
+
+function formatRange(item: ScheduleLike) {
+  const start = formatTime(item.plannedStartAt);
+  return item.plannedEndAt ? `${start}–${formatTime(item.plannedEndAt)}` : start;
+}
+
+function categoryMeta(item: ScheduleLike) {
+  if (item.scheduleType === "meeting") return { label: "회의", color: "bg-violet-500", text: "text-violet-700" };
+  if (item.scheduleType === "personal") return { label: "일상", color: "bg-stone-400", text: "text-stone-700" };
+  if (item.scheduleType === "review") return { label: "복기", color: "bg-indigo-500", text: "text-indigo-700" };
+  const category = parseScheduleNotes(item.notes).category;
+  if (category === "daily") return { label: "일상", color: "bg-stone-400", text: "text-stone-700" };
+  if (category === "urgent") return { label: "긴급", color: "bg-orange-500", text: "text-orange-700" };
+  return { label: item.taskId ? "작업" : "일정", color: "bg-sky-500", text: "text-sky-700" };
+}
+
+function suggestedCategory(title: string): ScheduleCategory | null {
+  const value = title.toLowerCase();
+  if (/회의|미팅|통화|면담/.test(value)) return "project";
+  if (/식사|병원|이동|장보기|운동/.test(value)) return "daily";
+  if (/급한|긴급|장애|오류/.test(value)) return "urgent";
+  return null;
+}
+
+function suggestedTags(title: string) {
+  const tags: string[] = [];
+  if (/개발|코딩|구현|버그|오류/.test(title)) tags.push("개발");
+  if (/기획|설계|조사|분석/.test(title)) tags.push("기획");
+  if (/회의|미팅|통화|고객|클라이언트/.test(title)) tags.push("외부대응");
+  return tags.slice(0, 3);
+}
+
 export default function Today() {
-  const [day] = useState(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
+  const [day, setDay] = useState(() => {
+    const value = new Date();
+    value.setHours(0, 0, 0, 0);
+    return value;
   });
-  const window = useMemo(() => {
+  const [showCapture, setShowCapture] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<ScheduleLike | null>(null);
+  const [initialCategory, setInitialCategory] = useState<ScheduleCategory>("project");
+  const [filter, setFilter] = useState<"all" | "task" | "meeting" | "personal" | "urgent">("all");
+  const [, setLocation] = useLocation();
+
+  const scheduleWindow = useMemo(() => {
     const start = new Date(day);
     const end = new Date(day);
     end.setDate(end.getDate() + 1);
     return { start, end };
   }, [day]);
-
-  const overview = trpc.workspace.overview.useQuery(window);
-  const continueContext = trpc.workspace.continue.useQuery();
-  const pinnedRecords = trpc.workspace.pinnedRecordSummaries.useQuery();
-  const savedSearches = trpc.workspace.savedRecordSearches.useQuery();
-  const weeklySummary = trpc.workspace.weeklySummary.useQuery();
+  const overview = trpc.workspace.overview.useQuery(scheduleWindow);
   const utils = trpc.useUtils();
-  const [, setLocation] = useLocation();
-
-  const [showCapture, setShowCapture] = useState(false);
-  const [showSchedule, setShowSchedule] = useState(false);
-  const [initialCategory, setInitialCategory] = useState<ScheduleCategory>("project");
-  const [editingSchedule, setEditingSchedule] = useState<any | null>(null);
-  const [notifEnabled, setNotifEnabled] = useState(false);
-
-  useEffect(() => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      setNotifEnabled(true);
-    }
-  }, []);
-
-  const handleToggleNotif = async () => {
-    const granted = await requestNotificationPermission();
-    if (granted) {
-      setNotifEnabled(true);
-      sendWebNotification("일정 알림 활성화", "오늘의 일정 시작 및 집중 타이머 알림이 켜졌습니다!");
-      toast.success("알림이 활성화되었습니다.");
-    } else {
-      playNotificationSound();
-      toast.info("알림 사운드가 재생됩니다.");
-    }
-  };
+  const data = overview.data;
+  const allSchedules = (data?.schedules ?? []) as ScheduleLike[];
+  const schedules = allSchedules.filter(item => {
+    if (filter === "all") return true;
+    if (filter === "urgent") return parseScheduleNotes(item.notes).category === "urgent" || item.scheduleFlags?.includes("urgent");
+    return (item.scheduleType ?? (parseScheduleNotes(item.notes).category === "daily" ? "personal" : "task")) === filter;
+  });
+  const completedCount = schedules.filter(item => item.status === "completed").length;
+  const pendingCount = schedules.filter(item => item.status === "planned" || item.status === "in_progress").length;
+  const activeSchedule = schedules.find(item => item.status === "in_progress") ?? schedules.find(item => item.status === "planned");
+  const isToday = day.toDateString() === new Date().toDateString();
 
   const invalidate = () => {
     void utils.workspace.overview.invalidate();
     void utils.workspace.continue.invalidate();
-    void utils.workspace.weeklySummary.invalidate();
   };
-
-  const setTaskStatus = trpc.workspace.setTaskStatus.useMutation({ onSuccess: invalidate });
+  const setScheduleStatus = trpc.workspace.setScheduleStatus.useMutation({
+    onSuccess: () => invalidate(),
+    onError: async (error, variables) => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await savePendingScheduleOperation({ id: createScheduleOutboxId(), kind: "status", payload: variables as Record<string, unknown>, createdAt: Date.now(), lastError: error.message });
+        toast.message("오프라인입니다. 상태 변경을 연결되면 전송합니다.");
+      } else toast.error(error.message);
+    },
+  });
   const createSchedule = trpc.workspace.createSchedule.useMutation({
     onSuccess: () => {
       setShowSchedule(false);
       invalidate();
       toast.success("일정을 추가했습니다.");
+    },
+    onError: async (error, variables) => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await savePendingScheduleOperation({ id: createScheduleOutboxId(), kind: "create", payload: variables as Record<string, unknown>, createdAt: Date.now(), lastError: error.message });
+        toast.message("오프라인입니다. 일정 생성을 연결되면 전송합니다.");
+      } else toast.error(error.message);
     },
   });
   const updateSchedule = trpc.workspace.updateSchedule.useMutation({
@@ -112,603 +143,163 @@ export default function Today() {
       invalidate();
       toast.success("일정을 수정했습니다.");
     },
-  });
-  const setScheduleStatus = trpc.workspace.setScheduleStatus.useMutation({
-    onSuccess: (_, variables) => {
-      if (variables.status === "in_progress") {
-        sendWebNotification("작업 시작", "지금 설정한 작업에 집중해 보세요!");
-      } else if (variables.status === "completed") {
-        sendWebNotification("작업 완료 축하!", "오늘의 일정을 하나 멋지게 완료했습니다! 🎉");
-      }
-      invalidate();
+    onError: async (error, variables) => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await savePendingScheduleOperation({ id: createScheduleOutboxId(), kind: "update", payload: variables as Record<string, unknown>, createdAt: Date.now(), lastError: error.message });
+        toast.message("오프라인입니다. 일정 수정을 연결되면 전송합니다.");
+      } else toast.error(error.message);
     },
   });
 
-  const data = overview.data;
-  const projectById = useMemo(() => new Map(data?.projects.map(p => [p.id, p]) ?? []), [data?.projects]);
-  const stageById = useMemo(() => new Map(data?.stages.map(s => [s.id, s]) ?? []), [data?.stages]);
-  const taskById = useMemo(() => new Map(data?.tasks.map(t => [t.id, t]) ?? []), [data?.tasks]);
-  const latestRecord = data?.records?.[0] ?? null;
+  const flushScheduleOutbox = async () => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+    const pending = await listPendingScheduleOperations().catch(() => []);
+    for (const operation of pending) {
+      try {
+        if (operation.kind === "create") await createSchedule.mutateAsync(operation.payload as never);
+        else if (operation.kind === "update") await updateSchedule.mutateAsync(operation.payload as never);
+        else await setScheduleStatus.mutateAsync(operation.payload as never);
+        await removePendingScheduleOperation(operation.id);
+      } catch (error) {
+        await setPendingScheduleOperationError(operation, error instanceof Error ? error.message : "재시도 실패");
+      }
+    }
+    invalidate();
+  };
 
-  const nowTask = useMemo(() => data?.tasks?.find(t => t.status === "in_progress") ?? null, [data?.tasks]);
-  const continueItem = continueContext.data;
-  const suggestedTask = data?.tasks ? getSuggestedTask(data.tasks) : null;
-  const linkedTask = nowTask ?? (continueItem?.task ? taskById.get(continueItem.task.id) ?? continueItem.task : null);
-  const linkedProject = linkedTask?.projectId ? projectById.get(linkedTask.projectId) : (continueItem?.project ?? null);
-  const linkedStage = linkedTask?.stageId ? stageById.get(linkedTask.stageId) : (continueItem?.stage ?? null);
-  const suggestedProject = suggestedTask?.projectId ? projectById.get(suggestedTask.projectId) : null;
+  useEffect(() => {
+    void flushScheduleOutbox();
+    const onOnline = () => { void flushScheduleOutbox(); };
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, []);
 
-  const openNewScheduleModal = (cat: ScheduleCategory = "project") => {
+  const moveDay = (amount: number) => {
+    setDay(current => {
+      const next = new Date(current);
+      next.setDate(next.getDate() + amount);
+      return next;
+    });
+  };
+  const openNewSchedule = (category: ScheduleCategory = "project") => {
+    setInitialCategory(category);
     setEditingSchedule(null);
-    setInitialCategory(cat);
+    setShowSchedule(true);
+  };
+  const openEditSchedule = (item: ScheduleLike) => {
+    setEditingSchedule(item);
     setShowSchedule(true);
   };
 
-  return (
-    <div className="space-y-3 max-w-6xl mx-auto pb-16">
-      {/* 1. 컴팩트 헤더 & 알림 활성화 버튼 */}
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-2xl font-black text-slate-950">오늘의 실행</h1>
-          <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
-            {dateHeading()}
-          </span>
-          <button
-            onClick={handleToggleNotif}
-            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-bold transition-colors ${
-              notifEnabled
-                ? "bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
-            title="일정 시작/완료 브라우저 알림 및 사운드 설정"
-          >
-            {notifEnabled ? <BellRing className="h-3.5 w-3.5 text-emerald-700" /> : <Bell className="h-3.5 w-3.5 text-slate-500" />}
-            <span>{notifEnabled ? "알림 ON" : "알림 켜기"}</span>
-          </button>
-        </div>
+  const grouped = schedules.reduce<Record<string, ScheduleLike[]>>((groups, item) => {
+    const hour = item.plannedStartAt ? new Date(item.plannedStartAt).getHours() : 23;
+    const group = hour < 12 ? "오전" : hour < 18 ? "오후" : "저녁";
+    (groups[group] ??= []).push(item);
+    return groups;
+  }, {});
 
-        {/* 퀵 일정 추가 버튼 그룹 (프로젝트 / 일상 / 긴급) */}
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            onClick={() => openNewScheduleModal("daily")}
-            className="flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200 px-2.5 py-1 text-xs font-bold text-sky-800 hover:bg-sky-100 shadow-2xs"
-          >
-            <Coffee className="h-3 w-3 text-sky-600" /> + 일상/개인 일정
-          </button>
-          <button
-            onClick={() => openNewScheduleModal("urgent")}
-            className="flex items-center gap-1 rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1 text-xs font-bold text-rose-800 hover:bg-rose-100 shadow-2xs"
-          >
-            <Zap className="h-3 w-3 text-rose-600" /> + 돌발/긴급
-          </button>
+  return (
+    <div className="mx-auto max-w-3xl pb-24">
+      <header className="mb-3 flex items-center justify-between gap-2">
+        <button type="button" onClick={() => moveDay(-1)} aria-label="전날 일정 보기" className="flex h-11 w-11 items-center justify-center rounded-xl text-2xl text-slate-500 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
+        <div className="min-w-0 text-center">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">오늘의 일정</p>
+          <h1 className="truncate text-xl font-black text-slate-950">{dateHeading(day)}</h1>
+          {!isToday && <button type="button" onClick={() => { const today = new Date(); today.setHours(0, 0, 0, 0); setDay(today); }} className="text-xs font-bold text-emerald-700 underline underline-offset-2">오늘로 이동</button>}
         </div>
+        <button type="button" onClick={() => moveDay(1)} aria-label="다음 날 일정 보기" className="flex h-11 w-11 items-center justify-center rounded-xl text-2xl text-slate-500 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>
       </header>
 
-      {/* 2. 🌟 3단 비주얼 대시보드 (40% NOW : 40% TODAY 타임라인 : 20% 주간 흐름) */}
-      <section className="grid gap-3 lg:grid-cols-[2fr_2fr_1fr]">
-        {/* 컬럼 1 (40%): NOW / Continue 실행 카드 */}
-        <div className="rounded-xl border-2 border-emerald-600 bg-emerald-700 p-4 text-white shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-emerald-500/60 pb-2">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-100">
-                {nowTask ? "● NOW / 지금 진행 중" : "▶ CONTINUE / 이어서 하기"}
-              </span>
-              <Clock3 className="h-4 w-4 text-emerald-100" />
+      <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 shadow-sm ring-1 ring-slate-200/70">
+        <p className="text-sm font-extrabold text-slate-800">오늘 {schedules.length}개 · 완료 {completedCount}개 · 남음 {pendingCount}개</p>
+        <button type="button" onClick={() => openNewSchedule()} className="pressable inline-flex h-10 shrink-0 items-center gap-1 rounded-lg bg-emerald-700 px-3 text-sm font-black text-white hover:bg-emerald-800"><Plus className="h-4 w-4" /> 일정 추가</button>
+      </div>
+
+      {activeSchedule && (
+        <section aria-label="현재 또는 다음 일정" className="mb-3 rounded-xl bg-slate-900 px-3.5 py-3 text-white shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">{activeSchedule.status === "in_progress" ? "지금" : "다음 일정"}</p>
+              <h2 className="mt-0.5 truncate text-lg font-black">{activeSchedule.title}</h2>
+              <p className="mt-0.5 text-sm font-semibold text-slate-300">{formatRange(activeSchedule)} · {formatMinutesToHuman(parseScheduleNotes(activeSchedule.notes).duration)}</p>
             </div>
-
-            {linkedTask ? (
-              <div className="mt-2.5">
-                <h2 className="text-2xl font-black text-white leading-tight">{linkedTask.title}</h2>
-                <p className="mt-1 text-xs font-bold text-emerald-100">
-                  {linkedProject?.title ?? "독립 작업"}{linkedStage ? ` › ${linkedStage.title}` : ""}
-                </p>
-                {continueItem?.lastRecord && (
-                  <blockquote className="mt-2 border-l-2 border-emerald-200 pl-2.5 text-xs font-medium leading-normal text-emerald-50">
-                    “{continueItem.lastRecord.content}”
-                  </blockquote>
-                )}
-                <div className="mt-2.5 rounded-lg bg-emerald-800/80 p-2 border border-emerald-600">
-                  <span className="text-[11px] font-extrabold uppercase text-emerald-200 block">세부 작업 (Action)</span>
-                  <p className="mt-0.5 text-xs font-bold text-white">{linkedTask.nextAction || "세부 작업 내용이 없습니다."}</p>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {linkedTask.status !== "in_progress" && (
-                    <button
-                      onClick={() =>
-                        setTaskStatus.mutate({
-                          id: linkedTask.id,
-                          expectedRevision: linkedTask.revision,
-                          status: "in_progress",
-                        })
-                      }
-                      className="pressable flex h-9 items-center gap-1.5 rounded-lg bg-white px-3.5 text-xs font-black text-emerald-800 shadow-xs"
-                    >
-                      <Play className="h-3.5 w-3.5 fill-current" /> 시작
-                    </button>
-                  )}
-                  <button
-                    onClick={() =>
-                      setTaskStatus.mutate({ id: linkedTask.id, expectedRevision: linkedTask.revision, status: "done" })
-                    }
-                    className="pressable flex h-9 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-800 px-3.5 text-xs font-black text-white hover:bg-emerald-900"
-                  >
-                    <Check className="h-4 w-4" /> 완료
-                  </button>
-                  <button
-                    onClick={() =>
-                      setTaskStatus.mutate({
-                        id: linkedTask.id,
-                        expectedRevision: linkedTask.revision,
-                        status: "on_hold",
-                      })
-                    }
-                    className="pressable flex h-9 items-center gap-1 px-2.5 text-xs font-bold text-emerald-100 hover:text-white"
-                  >
-                    <Pause className="h-4 w-4" /> 보류
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="py-2">
-                {suggestedTask ? (
-                  <SuggestedTaskSummary
-                    task={suggestedTask}
-                    projectTitle={suggestedProject?.title ?? "연결된 Project 없음"}
-                    onStart={() =>
-                      setTaskStatus.mutate({
-                        id: suggestedTask.id,
-                        expectedRevision: suggestedTask.revision,
-                        status: "in_progress",
-                      })
-                    }
-                  />
-                ) : (
-                  <>
-                    <h2 className="text-xl font-black text-white">시작할 작업이 없습니다.</h2>
-                    <p className="mt-1 text-xs font-semibold text-emerald-100">프로젝트를 만들거나 오늘의 일정을 추가하세요.</p>
-                    <button
-                      onClick={() => setLocation("/projects")}
-                      className="pressable mt-3 rounded-lg bg-white px-3.5 py-2 text-xs font-black text-emerald-800 shadow"
-                    >
-                      Project 만들기
-                    </button>
-                  </>
-                )}
-                {latestRecord && <RecentCaptureSummary content={latestRecord.content} />}
-              </div>
-            )}
+            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${categoryMeta(activeSchedule).color}`} aria-label={`${categoryMeta(activeSchedule).label} 종류`} />
           </div>
-        </div>
-
-        {/* 컬럼 2 (40%): TODAY 일정 타임라인 */}
-        <aside className="rounded-xl border-2 border-slate-200 bg-white p-3 sm:p-4 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-800">Today 일정 타임라인</span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.2 text-[10px] font-bold text-slate-600">
-                  {data?.schedules.length ?? 0}건
-                </span>
-              </div>
-              <button
-                onClick={() => openNewScheduleModal("project")}
-                className="flex items-center gap-1 text-xs font-extrabold text-emerald-700 hover:underline"
-              >
-                <Plus className="h-3.5 w-3.5" /> 일정 추가
-              </button>
-            </div>
-
-            <div className="mt-2 space-y-1">
-              {data?.schedules.length ? (
-                data.schedules.map(item => {
-                  const done = item.status === "completed";
-                  const isActive = item.status === "in_progress";
-                  const parsed = parseScheduleNotes(item.notes);
-                  const time = item.plannedStartAt
-                    ? new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(
-                        new Date(item.plannedStartAt)
-                      )
-                    : "미정";
-
-                  const isDaily = parsed.category === "daily" || (!item.taskId && !parsed.category);
-                  const isUrgent = parsed.category === "urgent";
-
-                  return (
-                    <article
-                      key={item.id}
-                      className={`group flex items-center justify-between gap-2.5 rounded-xl px-3 py-2 transition-all ${
-                        isActive
-                          ? "bg-emerald-700 text-white shadow-md ring-2 ring-emerald-500"
-                          : "hover:bg-slate-100 bg-white border border-slate-200 shadow-2xs"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className={`text-sm font-black font-mono shrink-0 ${isActive ? "text-emerald-100" : "text-slate-700"}`}>
-                          {time}
-                        </span>
-
-                        {/* 카테고리 태그 */}
-                        {isUrgent ? (
-                          <span className="rounded-md bg-rose-100 text-rose-800 border border-rose-200 px-1.5 py-0.5 text-xs font-black shrink-0">
-                            🚨 긴급
-                          </span>
-                        ) : isDaily ? (
-                          <span className="rounded-md bg-sky-100 text-sky-800 border border-sky-200 px-1.5 py-0.5 text-xs font-black shrink-0">
-                            ☕ 일상
-                          </span>
-                        ) : (
-                          <span className="rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 text-xs font-black shrink-0">
-                            🛠️ Pjt
-                          </span>
-                        )}
-
-                        <span
-                          className={`text-sm font-black truncate ${
-                            done ? "line-through opacity-45 text-slate-400" : isActive ? "text-white" : "text-slate-950"
-                          }`}
-                        >
-                          {item.title}
-                        </span>
-
-                        {/* 소요시간 및 휴식 표시 */}
-                        <span className={`text-xs font-bold shrink-0 ${isActive ? "text-emerald-200" : "text-slate-500"}`}>
-                          ({formatMinutesToHuman(parsed.duration)}{parsed.breakTime > 0 ? `·휴${formatMinutesToHuman(parsed.breakTime)}` : ""})
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-1 shrink-0">
-                        {done ? (
-                          <Check className="h-4 w-4 text-emerald-600" />
-                        ) : (
-                          <button
-                            aria-label={`${item.title} ${isActive ? "완료" : "시작"}`}
-                            onClick={() =>
-                              setScheduleStatus.mutate({
-                                id: item.id,
-                                expectedRevision: item.revision,
-                                status: isActive ? "completed" : "in_progress",
-                              })
-                            }
-                            className="p-0.5 hover:bg-white hover:text-slate-900 rounded"
-                          >
-                            {isActive ? (
-                              <Check className="h-4 w-4 text-white" />
-                            ) : (
-                              <Circle className="h-4 w-4 text-slate-400 hover:text-emerald-600" />
-                            )}
-                          </button>
-                        )}
-                        <button
-                          aria-label={`${item.title} 수정`}
-                          onClick={() => {
-                            setEditingSchedule(item);
-                            setShowSchedule(true);
-                          }}
-                          className={`p-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${
-                            isActive ? "text-white" : "text-slate-400 hover:text-slate-800"
-                          }`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })
-              ) : (
-                <EmptySchedule onAdd={() => openNewScheduleModal("project")} />
-              )}
-            </div>
-          </div>
-        </aside>
-
-        {/* 컬럼 3 (20%): 주간 흐름 & 핀 기록 */}
-        <div className="flex flex-col gap-2.5">
-          <WeeklySummary
-            completedTaskCount={weeklySummary.data?.completedTaskCount ?? 0}
-            recordCount={weeklySummary.data?.recordCount ?? 0}
-            completedScheduleCount={weeklySummary.data?.completedScheduleCount ?? 0}
-            change={weeklySummary.data?.change}
-            loading={weeklySummary.isLoading}
-          />
-          <PinnedRecordSummary
-            items={pinnedRecords.data ?? []}
-            loading={pinnedRecords.isLoading}
-            onViewRecords={() => setLocation("/records")}
-          />
-        </div>
-      </section>
-
-      {savedSearches.data?.length ? (
-        <section aria-label="Today 저장 Record 검색" className="rounded-xl border border-slate-200 bg-white p-2.5 sm:p-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-black text-slate-800">저장된 검색 바로가기</span>
-            <button type="button" onClick={() => setLocation("/records")} className="text-xs font-bold text-emerald-800 hover:underline">
-              전체 보기 →
-            </button>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {savedSearches.data.slice(0, 6).map(search => (
-              <button
-                type="button"
-                key={search.id}
-                onClick={() => setLocation(`/records?savedSearch=${search.id}`)}
-                className="pressable rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-800 hover:bg-emerald-50 hover:text-emerald-900"
-              >
-                {search.name}
-              </button>
-            ))}
+          <div className="mt-2 flex gap-2">
+            <button type="button" onClick={() => setScheduleStatus.mutate({ id: activeSchedule.id, expectedRevision: activeSchedule.revision, status: activeSchedule.status === "in_progress" ? "completed" : "in_progress" })} className="pressable h-10 rounded-lg bg-white px-3.5 text-sm font-black text-slate-900">{activeSchedule.status === "in_progress" ? "완료" : "시작"}</button>
+            <button type="button" onClick={() => openEditSchedule(activeSchedule)} className="h-10 rounded-lg px-3 text-sm font-bold text-slate-300 hover:bg-white/10">수정</button>
           </div>
         </section>
-      ) : null}
+      )}
 
-      {/* 4. 슬림 빠른 기록 버튼 */}
-      <section className="pt-1">
-        {!showCapture ? (
-          <button
-            onClick={() => setShowCapture(true)}
-            className="pressable flex h-10 w-full items-center justify-between rounded-xl border-2 border-slate-200 bg-white px-4 hover:border-emerald-500 hover:bg-emerald-50/50 shadow-2xs"
-          >
-            <span className="text-sm font-black text-slate-900">+ 새로운 생각이나 작업 기록하기...</span>
-            <SquarePen className="h-4 w-4 text-emerald-700" />
-          </button>
-        ) : (
-          <CapturePanel workspace={data} onComplete={() => setShowCapture(false)} />
-        )}
+      <section aria-label="오늘 일정" className="rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-slate-200/70">
+        <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1" aria-label="일정 종류 필터">
+          {([["all", "전체"], ["task", "작업"], ["meeting", "회의"], ["personal", "일상"], ["urgent", "긴급"]] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} className={`h-9 shrink-0 rounded-full px-3 text-xs font-bold ${filter === value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{label}</button>)}
+        </div>
+        {schedules.length ? Object.entries(grouped).map(([group, items]) => (
+          <div key={group} className="py-1.5">
+            <h2 className="mb-1 border-b border-slate-100 pb-1 text-xs font-black text-slate-500">{group}</h2>
+            {items.map(item => {
+              const done = item.status === "completed";
+              const active = item.status === "in_progress";
+              const meta = categoryMeta(item);
+              const duration = parseScheduleNotes(item.notes).duration;
+              return (
+                <article key={item.id} className={`group flex min-h-[48px] items-center gap-2 border-b border-slate-100 py-1.5 last:border-0 ${active ? "bg-emerald-50/70" : ""}`}>
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${meta.color}`} aria-hidden="true" />
+                  <span className={`w-[74px] shrink-0 font-mono text-[13px] font-bold ${done ? "text-slate-400" : "text-slate-600"}`}>{formatTime(item.plannedStartAt)}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className={`truncate text-[15px] font-extrabold ${done ? "text-slate-400 line-through" : "text-slate-900"}`}>{item.title}</p>
+                    {active && <p className="text-xs font-bold text-emerald-700">진행 중 · {formatMinutesToHuman(duration)}</p>}
+                    {!active && item.tags?.length ? <p className="truncate text-[11px] font-semibold text-slate-400">#{item.tags.slice(0, 2).join(" #")}</p> : null}
+                  </div>
+                  <span className={`hidden shrink-0 text-[11px] font-bold sm:inline ${meta.text}`}>{meta.label}</span>
+                  <span className="shrink-0 text-sm font-black text-slate-500" aria-label={done ? "완료" : active ? "진행 중" : "예정"}>{done ? "✓" : active ? "▶" : "○"}</span>
+                  <button type="button" onClick={() => openEditSchedule(item)} aria-label={`${item.title} 수정`} className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-800"><Pencil className="h-4 w-4" /></button>
+                </article>
+              );
+            })}
+          </div>
+        )) : <EmptySchedule onAdd={() => openNewSchedule()} />}
       </section>
 
-      {/* 5. 똑똑한 스마트 일정 생성기 (1h, 1.5h, 30m 지원) */}
-      {showSchedule && (
-        <SmartScheduleComposer
-          tasks={data?.tasks ?? []}
-          initialCategory={initialCategory}
-          schedule={editingSchedule}
-          onCancel={() => {
-            setShowSchedule(false);
-            setEditingSchedule(null);
-          }}
-          onSubmit={({ title, taskId, plannedStartAt, plannedEndAt, notes, expectedRevision }) => {
-            if (editingSchedule)
-              updateSchedule.mutate({
-                id: editingSchedule.id,
-                expectedRevision: expectedRevision ?? editingSchedule.revision,
-                title,
-                taskId,
-                plannedStartAt,
-                plannedEndAt,
-                notes,
-              });
-            else createSchedule.mutate({ title, taskId, plannedStartAt, plannedEndAt, notes });
-          }}
-          busy={createSchedule.isPending || updateSchedule.isPending}
-        />
-      )}
+      <div className="mt-3 flex gap-2">
+        <button type="button" onClick={() => setShowCapture(true)} className="h-11 flex-1 rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><SquarePen className="mr-1 inline h-4 w-4" />기록</button>
+        <button type="button" onClick={() => setLocation("/review")} className="h-11 flex-1 rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><CalendarDays className="mr-1 inline h-4 w-4" />하루 복기</button>
+      </div>
+
+      {showCapture && <section className="mt-3"><CapturePanel workspace={data} onComplete={() => setShowCapture(false)} /></section>}
+
+      {showSchedule && <SmartScheduleComposer tasks={(data?.tasks ?? []) as Array<{ id: number; title: string }>} initialCategory={initialCategory} baseDate={day} schedule={editingSchedule} onCancel={() => { setShowSchedule(false); setEditingSchedule(null); }} onCarryOver={editingSchedule ? () => { const start = editingSchedule.plannedStartAt ? new Date(editingSchedule.plannedStartAt) : new Date(day); const end = editingSchedule.plannedEndAt ? new Date(editingSchedule.plannedEndAt) : null; start.setDate(start.getDate() + 1); if (end) end.setDate(end.getDate() + 1); updateSchedule.mutate({ id: editingSchedule.id, expectedRevision: editingSchedule.revision, plannedStartAt: start, plannedEndAt: end, notes: editingSchedule.notes }); } : undefined} onSubmit={values => { if (editingSchedule) updateSchedule.mutate({ id: editingSchedule.id, expectedRevision: editingSchedule.revision, title: values.title, taskId: values.taskId, scheduleType: values.scheduleType, scheduleFlags: values.scheduleFlags, tags: values.tags, plannedStartAt: values.plannedStartAt, plannedEndAt: values.plannedEndAt, notes: values.notes }); else createSchedule.mutate(values); }} busy={createSchedule.isPending || updateSchedule.isPending} />}
     </div>
   );
 }
 
 function EmptySchedule({ onAdd }: { onAdd: () => void }) {
-  return (
-    <div className="rounded-xl border border-dashed border-emerald-200 bg-white/60 p-3">
-      <p className="font-bold text-slate-900 text-xs">오늘 등록된 일정이 없습니다.</p>
-      <p className="mt-0.5 text-xs text-slate-500">프로젝트 작업이나 일상/긴급 일정을 추가하세요.</p>
-      <button onClick={onAdd} className="mt-2 text-xs font-bold text-emerald-700 underline">
-        + 일정 등록
-      </button>
-    </div>
-  );
+  return <div className="py-8 text-center"><p className="text-sm font-extrabold text-slate-800">등록된 일정이 없습니다.</p><button type="button" onClick={onAdd} className="mt-2 text-sm font-bold text-emerald-700 underline underline-offset-2">+ 첫 일정 추가</button></div>;
 }
 
-{/* 스마트 시간 계산 & 카테고리 분리 일정 모달 (1h, 1.5h, 30m 지원) */}
-function SmartScheduleComposer({
-  tasks,
-  initialCategory,
-  schedule,
-  onCancel,
-  onSubmit,
-  busy,
-}: {
-  tasks: Array<{ id: number; title: string }>;
-  initialCategory: ScheduleCategory;
-  schedule: any | null;
-  onCancel: () => void;
-  onSubmit: (values: {
-    title: string;
-    taskId: number | null;
-    plannedStartAt: Date;
-    plannedEndAt?: Date;
-    notes: string;
-    expectedRevision?: number;
-  }) => void;
-  busy: boolean;
-}) {
+function SmartScheduleComposer({ tasks, initialCategory, baseDate, schedule, onCancel, onCarryOver, onSubmit, busy }: { tasks: Array<{ id: number; title: string }>; initialCategory: ScheduleCategory; baseDate: Date; schedule: ScheduleLike | null; onCancel: () => void; onCarryOver?: () => void; onSubmit: (values: { title: string; taskId: number | null; scheduleType: "task" | "meeting" | "personal" | "review"; scheduleFlags: Array<"urgent" | "focus" | "external" | "recurring" | "from_idea">; tags: string[]; plannedStartAt: Date; plannedEndAt: Date; notes: string }) => void; busy: boolean }) {
   const parsed = parseScheduleNotes(schedule?.notes);
   const [category, setCategory] = useState<ScheduleCategory>(schedule ? parsed.category : initialCategory);
   const [title, setTitle] = useState(schedule?.title ?? "");
-  const [startTime, setStartTime] = useState(
-    schedule?.plannedStartAt
-      ? new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false }).format(
-          new Date(schedule.plannedStartAt)
-        )
-      : "09:00"
-  );
+  const [startTime, setStartTime] = useState(schedule?.plannedStartAt ? formatTime(schedule.plannedStartAt) : "09:00");
   const [durationInput, setDurationInput] = useState(schedule ? formatMinutesToHuman(parsed.duration) : "1h");
-  const [breakInput, setBreakInput] = useState(schedule ? formatMinutesToHuman(parsed.breakTime) : "0h");
   const [taskId, setTaskId] = useState(schedule?.taskId ? String(schedule.taskId) : "");
+  const [tags, setTags] = useState<string[]>([]);
+  const duration = parseTimeToMinutes(durationInput) || 60;
+  const recommendation = suggestedCategory(title);
+  const endTime = useMemo(() => { const [hours, minutes] = startTime.split(":").map(Number); const total = hours * 60 + minutes + duration; return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`; }, [duration, startTime]);
 
-  const durationMin = parseTimeToMinutes(durationInput) || 60;
-  const breakMin = parseTimeToMinutes(breakInput) || 0;
-  const netFocusMinutes = Math.max(0, durationMin - breakMin);
-
-  const endTimeString = useMemo(() => {
-    const [h, m] = startTime.split(":").map(Number);
-    const endMinutes = h * 60 + m + durationMin;
-    const endH = Math.floor(endMinutes / 60) % 24;
-    const endM = endMinutes % 60;
-    return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
-  }, [startTime, durationMin]);
-
-  const submit = (expectedRevision?: number) => {
+  const submit = () => {
     if (!title.trim()) return;
-    const [h, m] = startTime.split(":").map(Number);
-    const plannedStartAt = schedule?.plannedStartAt ? new Date(schedule.plannedStartAt) : new Date();
-    plannedStartAt.setHours(h, m, 0, 0);
-
-    const plannedEndAt = new Date(plannedStartAt.getTime() + durationMin * 60 * 1000);
-    const notesJson = JSON.stringify({ category, duration: durationMin, breakTime: breakMin });
-
-    onSubmit({
-      title: title.trim(),
-      taskId: category === "project" && taskId ? Number(taskId) : null,
-      plannedStartAt,
-      plannedEndAt,
-      notes: notesJson,
-      expectedRevision,
-    });
+    const [hours, minutes] = startTime.split(":").map(Number);
+    const start = schedule?.plannedStartAt ? new Date(schedule.plannedStartAt) : new Date(baseDate);
+    start.setHours(hours, minutes, 0, 0);
+    const end = new Date(start.getTime() + duration * 60 * 1000);
+    const scheduleType = category === "daily" ? "personal" : category === "project" && /회의|미팅|통화/.test(title) ? "meeting" : "task";
+    onSubmit({ title: title.trim(), taskId: category === "project" && taskId ? Number(taskId) : null, scheduleType, scheduleFlags: category === "urgent" ? ["urgent"] : [], tags, plannedStartAt: start, plannedEndAt: end, notes: JSON.stringify({ category, duration, breakTime: 0 }) });
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs animate-in fade-in">
-      <section
-        role="dialog"
-        aria-modal="true"
-        className="w-full max-w-md rounded-2xl border-2 border-emerald-600 bg-white p-4 sm:p-5 shadow-2xl text-xs"
-      >
-        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-          <h3 className="text-sm font-black text-slate-900">{schedule ? "일정 수정" : "새 일정 등록"}</h3>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-700">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-      {/* 1. 카테고리 3종 탭 (프로젝트 vs 일상 vs 긴급) */}
-      <div className="mt-2.5 grid grid-cols-3 gap-1.5">
-        <button
-          type="button"
-          onClick={() => setCategory("project")}
-          className={`flex items-center justify-center gap-1 rounded-lg py-1.5 font-bold transition-all border ${
-            category === "project"
-              ? "bg-emerald-700 text-white border-emerald-800 shadow-xs"
-              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-          }`}
-        >
-          <Wrench className="h-3 w-3" /> 프로젝트
-        </button>
-        <button
-          type="button"
-          onClick={() => setCategory("daily")}
-          className={`flex items-center justify-center gap-1 rounded-lg py-1.5 font-bold transition-all border ${
-            category === "daily"
-              ? "bg-sky-700 text-white border-sky-800 shadow-xs"
-              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-          }`}
-        >
-          <Coffee className="h-3 w-3" /> 일상/생활
-        </button>
-        <button
-          type="button"
-          onClick={() => setCategory("urgent")}
-          className={`flex items-center justify-center gap-1 rounded-lg py-1.5 font-bold transition-all border ${
-            category === "urgent"
-              ? "bg-rose-700 text-white border-rose-800 shadow-xs"
-              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-          }`}
-        >
-          <Zap className="h-3 w-3" /> 긴급/돌발
-        </button>
-      </div>
-
-      {/* 2. 일정 제목 & 프로젝트 선택 */}
-      <div className="mt-2.5 space-y-2">
-        <input
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          className="mono-input h-9 text-xs font-bold"
-          placeholder={
-            category === "project"
-              ? "일정 제목 (예: 머티리얼 작업)"
-              : category === "daily"
-              ? "일상 일정 (예: 점심 식사, 운동, 병원)"
-              : "긴급 일정 (예: 긴급 버그 수정, 클라이언트 통화)"
-          }
-          autoFocus
-        />
-
-        {category === "project" && (
-          <select
-            value={taskId}
-            onChange={e => {
-              setTaskId(e.target.value);
-              const found = tasks.find(t => String(t.id) === e.target.value);
-              if (found && !title) setTitle(found.title);
-            }}
-            className="mono-input h-9 text-xs font-bold"
-          >
-            <option value="">연결할 Project Task 선택 (선택 사항)</option>
-            {tasks.map(task => (
-              <option key={task.id} value={task.id}>
-                {task.title}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      {/* 3. 🌟 스마트 시간 계산 공식 (1h, 1.5h, 0.5h) */}
-      <div className="mt-2.5 rounded-xl bg-slate-50 p-2.5 border border-slate-200 space-y-2">
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label className="font-extrabold text-slate-700 text-[11px] block">시작 시간</label>
-            <input
-              type="time"
-              value={startTime}
-              onChange={e => setStartTime(e.target.value)}
-              className="mono-input h-8 text-xs font-bold mt-0.5"
-            />
-          </div>
-          <div>
-            <label className="font-extrabold text-slate-700 text-[11px] block">예상 시간</label>
-            <input
-              type="text"
-              value={durationInput}
-              onChange={e => setDurationInput(e.target.value)}
-              placeholder="1.5h"
-              className="mono-input h-8 text-xs font-bold mt-0.5 text-center px-1.5"
-              title="예: 1h, 1.5h, 0.5h, 30m, 90"
-            />
-          </div>
-          <div>
-            <label className="font-extrabold text-slate-700 text-[11px] block">휴식 시간</label>
-            <input
-              type="text"
-              value={breakInput}
-              onChange={e => setBreakInput(e.target.value)}
-              placeholder="0.5h"
-              className="mono-input h-8 text-xs font-bold mt-0.5 text-center px-1.5"
-              title="예: 0h, 0.5h, 1h, 15m 등"
-            />
-          </div>
-        </div>
-
-        {/* 자동 계산 결과 요약 바 */}
-        <div className="flex items-center justify-between pt-1.5 border-t border-slate-200 text-[11px]">
-          <span className="font-bold text-slate-600">
-            ⏰ {startTime} ~ {endTimeString} ({formatMinutesToHuman(durationMin)})
-          </span>
-          <span className="font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
-            순수 집중: {formatMinutesToHuman(netFocusMinutes)} ({netFocusMinutes}분)
-          </span>
-        </div>
-      </div>
-
-      {/* 저장 버튼 */}
-      <button
-        onClick={() => submit()}
-        disabled={busy || !title.trim()}
-        className="pressable mt-3 h-10 w-full rounded-xl bg-emerald-700 text-xs font-black text-white hover:bg-emerald-800 disabled:opacity-40 shadow-sm"
-      >
-        {busy ? "저장 중..." : schedule ? "일정 수정 완료" : "오늘 일정 등록"}
-      </button>
-      </section>
-    </div>
-  );
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"><section role="dialog" aria-modal="true" className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-2xl sm:rounded-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-black text-slate-950">{schedule ? "일정 수정" : "새 일정"}</h2><button type="button" onClick={onCancel} aria-label="일정 창 닫기" className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="mt-3 grid grid-cols-3 gap-1.5"><button type="button" onClick={() => setCategory("project")} className={`h-10 rounded-lg text-sm font-bold ${category === "project" ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-700"}`}>작업</button><button type="button" onClick={() => setCategory("daily")} className={`h-10 rounded-lg text-sm font-bold ${category === "daily" ? "bg-stone-600 text-white" : "bg-slate-100 text-slate-700"}`}>일상</button><button type="button" onClick={() => setCategory("urgent")} className={`h-10 rounded-lg text-sm font-bold ${category === "urgent" ? "bg-orange-600 text-white" : "bg-slate-100 text-slate-700"}`}>긴급</button></div><input autoFocus value={title} onChange={event => setTitle(event.target.value)} className="mono-input mt-3 h-11 text-sm font-bold" placeholder="무엇을 할까요?" />{recommendation && recommendation !== category && <p className="mt-1 text-xs font-bold text-sky-700">추천 분류: {recommendation === "daily" ? "일상" : recommendation === "urgent" ? "긴급" : "작업"}</p>}{category === "project" && <select value={taskId} onChange={event => { setTaskId(event.target.value); const task = tasks.find(item => String(item.id) === event.target.value); if (task && !title) setTitle(task.title); }} className="mono-input mt-2 h-11 text-sm"><option value="">연결할 작업 선택 (선택)</option>{tasks.map(task => <option key={task.id} value={task.id}>{task.title}</option>)}</select>}<div className="mt-3 grid grid-cols-2 gap-2"><label className="text-xs font-bold text-slate-600">시작<input type="time" value={startTime} onChange={event => setStartTime(event.target.value)} className="mono-input mt-1 h-11 text-sm" /></label><label className="text-xs font-bold text-slate-600">예상 소요<input value={durationInput} onChange={event => setDurationInput(event.target.value)} className="mono-input mt-1 h-11 text-sm" placeholder="1h" /></label></div><div className="mt-3"><label className="text-xs font-bold text-slate-600">태그 <span className="font-normal text-slate-400">(선택, 쉼표로 구분)</span><input value={tags.join(", ")} onChange={event => setTags(event.target.value.split(",").map(tag => tag.trim()).filter(Boolean).slice(0, 3))} className="mono-input mt-1 h-11 text-sm" placeholder="기획, 개발" /></label>{suggestedTags(title).length > 0 && tags.length === 0 && <button type="button" onClick={() => setTags(suggestedTags(title))} className="mt-1 text-xs font-bold text-sky-700 underline underline-offset-2">추천 태그: {suggestedTags(title).join(", ")}</button>}</div><p className="mt-2 text-sm font-bold text-slate-600">{startTime}–{endTime} · {formatMinutesToHuman(duration)}</p><div className="mt-4 flex gap-2">{onCarryOver && <button type="button" onClick={onCarryOver} disabled={busy} className="h-12 flex-1 rounded-lg bg-amber-50 text-sm font-black text-amber-800 ring-1 ring-amber-200">내일로 미루기</button>}<button type="button" onClick={submit} disabled={busy || !title.trim()} className="h-12 flex-1 rounded-lg bg-emerald-700 text-sm font-black text-white hover:bg-emerald-800 disabled:opacity-40">{busy ? "저장 중…" : schedule ? "수정 저장" : "일정 저장"}</button></div></section></div>;
 }

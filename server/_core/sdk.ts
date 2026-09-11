@@ -289,6 +289,23 @@ class SDKServer {
     }
 
     if (ENV.authMode === "local") {
+      // Allow the local UI/demo to be inspected without a database configured.
+      // Database-backed workspace features still require DATABASE_URL.
+      if (!ENV.databaseUrl) {
+        const now = new Date();
+        return {
+          id: -1,
+          openId: session.openId,
+          name: session.name || ENV.localAdminName,
+          email: null,
+          loginMethod: "local",
+          role: "admin",
+          createdAt: now,
+          updatedAt: now,
+          lastSignedIn: now,
+        } as AuthenticatedUser;
+      }
+
       let user = await db.getUserByOpenId(session.openId);
       if (!user) {
         await db.upsertUser({

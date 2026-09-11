@@ -1,16 +1,18 @@
 export const ENV = {
   appId: process.env.AUTH_MODE === "local" ? "local" : (process.env.VITE_APP_ID ?? ""),
-  cookieSecret: process.env.JWT_SECRET ?? "",
+  cookieSecret: process.env.JWT_SECRET ?? "local-development-secret",
   databaseUrl: process.env.DATABASE_URL ?? "",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
-  authMode: process.env.AUTH_MODE === "local" ? "local" : "manus",
+  // Self-hosted GitHub/Render deployments use local authentication by default.
+  authMode: process.env.AUTH_MODE === "manus" ? "manus" : "local",
   localAdminOpenId: process.env.LOCAL_ADMIN_OPEN_ID ?? "local-owner",
   localAdminName: process.env.LOCAL_ADMIN_NAME ?? "개인 사용자",
-  localAdminPassword: process.env.LOCAL_ADMIN_PASSWORD ?? "",
-  storageMode: process.env.STORAGE_MODE === "local" ? "local" : "forge",
+  localAdminPassword: process.env.LOCAL_ADMIN_PASSWORD ?? "000",
+  // Local filesystem storage is the default; Manus Forge is opt-in only.
+  storageMode: process.env.STORAGE_MODE === "forge" ? "forge" : "local",
   localStorageDir: process.env.LOCAL_STORAGE_DIR ?? "./data/uploads",
 };

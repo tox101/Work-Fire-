@@ -18,11 +18,11 @@ services:
       - key: LOCAL_ADMIN_NAME
         value: 개인 사용자
       - key: LOCAL_ADMIN_PASSWORD
-        generateValue: true
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: DATABASE_URL
-        value: mysql://3jGcLwRpixPPsR9.root:a9Gn5IC0wrRsPONS75l6@gateway04.us-east-1.prod.aws.tidbcloud.com:4000/NePb75HhM9cEVfBc7uDCdC?ssl={"rejectUnauthorized":true}
+        sync: false
       - key: STORAGE_MODE
         value: local
       - key: LOCAL_STORAGE_DIR

@@ -8,7 +8,7 @@ export default function LocalLogin() {
   const [error, setError] = useState("");
   const login = trpc.auth.localLogin.useMutation({
     onSuccess: () => navigate("/"),
-    onError: () => setError("비밀번호를 확인하세요."),
+    onError: error => setError(error.message || "로그인에 실패했습니다."),
   });
 
   return <main className="min-h-screen bg-[#f7faf5] p-5 text-[#173b2a] sm:grid sm:place-items-center">
