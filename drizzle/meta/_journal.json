@@ -71,6 +71,13 @@
       "when": 1787801663789,
       "tag": "0009_yummy_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789137224000,
+      "tag": "0010_compact_schedule_taxonomy",
+      "breakpoints": true
     }
   ]
 }

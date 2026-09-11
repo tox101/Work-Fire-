@@ -93,6 +93,8 @@ export const schedules = mysqlTable(
     userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
     taskId: int("taskId").references(() => tasks.id, { onDelete: "set null" }),
     title: varchar("title", { length: 220 }).notNull(),
+    scheduleType: mysqlEnum("scheduleType", ["task", "meeting", "personal", "review"]).default("task").notNull(),
+    scheduleFlags: json("scheduleFlags").$type<string[]>().notNull(),
     revision: int("revision").default(1).notNull(),
     plannedStartAt: timestamp("plannedStartAt"),
     plannedEndAt: timestamp("plannedEndAt"),
@@ -150,6 +152,22 @@ export const recordTags = mysqlTable(
   table => [
     uniqueIndex("record_tags_user_record_tag_idx").on(table.userId, table.recordId, table.tag),
     index("record_tags_user_tag_record_idx").on(table.userId, table.tag, table.recordId),
+  ],
+);
+
+export const scheduleTags = mysqlTable(
+  "scheduleTags",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    scheduleId: int("scheduleId").notNull().references(() => schedules.id, { onDelete: "cascade" }),
+    tag: varchar("tag", { length: 64 }).notNull(),
+    source: mysqlEnum("source", ["user", "rule", "ai"]).default("user").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("schedule_tags_user_schedule_tag_idx").on(table.userId, table.scheduleId, table.tag),
+    index("schedule_tags_user_tag_schedule_idx").on(table.userId, table.tag, table.scheduleId),
   ],
 );
 
@@ -254,6 +272,7 @@ export type Project = typeof projects.$inferSelect;
 export type Stage = typeof stages.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type Schedule = typeof schedules.$inferSelect;
+export type ScheduleTag = typeof scheduleTags.$inferSelect;
 export type Record = typeof records.$inferSelect;
 export type SavedRecordSearch = typeof savedRecordSearches.$inferSelect;
 export type ReviewNote = typeof reviewNotes.$inferSelect;
