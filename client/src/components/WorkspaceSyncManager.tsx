@@ -20,6 +20,7 @@ export function WorkspaceSyncManager() {
         utils.workspace.recordSearch.invalidate(),
         utils.workspace.pinnedRecordSummaries.invalidate(),
         utils.workspace.savedRecordSearches.invalidate(),
+        utils.workspace.scheduleTagStats.invalidate(),
       ]);
       const after = getWorkspaceSignature();
       if (announce && shouldAnnounceWorkspaceSync(before, after)) toast.message("다른 기기의 변경을 반영했습니다.");

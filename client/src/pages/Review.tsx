@@ -22,6 +22,7 @@ export default function Review() {
   const review = trpc.workspace.monthlyReview.useQuery(window);
   const reviewNote = trpc.workspace.reviewNote.useQuery({ periodStart: window.start, periodEnd: window.end });
   const workspace = trpc.workspace.overview.useQuery({ start: window.start, end: window.end });
+  const scheduleTagStats = trpc.workspace.scheduleTagStats.useQuery({ start: window.start, end: window.end });
   const [memo, setMemo] = useState("");
   const [saved, setSaved] = useState(false);
   const [memoSaveError, setMemoSaveError] = useState<string | null>(null);
@@ -167,6 +168,18 @@ export default function Review() {
           </div>
         </div>
       </section>
+
+      {scheduleTagStats.data?.length ? (
+        <section aria-label="태그별 일정 패턴" className="rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
+          <div className="flex items-center justify-between gap-2">
+            <div><p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">Tag pattern</p><h2 className="mt-1 text-sm font-black text-slate-900">이번 달 일정 분류</h2></div>
+            <span className="text-xs font-bold text-slate-500">사용량 · 완료</span>
+          </div>
+          <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+            {scheduleTagStats.data.slice(0, 8).map(item => <div key={item.tag} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-2 text-xs"><span className="truncate font-bold text-slate-700">#{item.tag}</span><span className="shrink-0 font-black text-emerald-700">{item.usageCount} · {item.completedCount}</span></div>)}
+          </div>
+        </section>
+      ) : null}
 
       {/* 3. 프로젝트별 시간 분포 & 전월 대비 변화 (가로 2열 콤팩트 배치) */}
       <div className="grid gap-3 sm:grid-cols-2">

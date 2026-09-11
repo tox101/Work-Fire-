@@ -20,7 +20,8 @@ export type PendingCapture = {
 
 const DATABASE_NAME = "personal-work-os";
 const STORE_NAME = "capture-outbox";
-const DATABASE_VERSION = 1;
+// Schedule outbox와 동일한 DB를 공유하므로 버전을 맞춘다.
+const DATABASE_VERSION = 2;
 
 function openDatabase() {
   if (typeof window === "undefined" || !window.indexedDB) return Promise.reject(new Error("이 기기에서는 전송 대기함을 사용할 수 없습니다."));

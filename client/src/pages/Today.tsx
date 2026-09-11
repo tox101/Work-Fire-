@@ -1,9 +1,9 @@
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Circle, Pencil, Plus, SquarePen, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Circle, Clock3, Pencil, Plus, SquarePen, X } from "lucide-react";
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { CapturePanel } from "@/components/CapturePanel";
-import { formatMinutesToHuman, parseTimeToMinutes } from "@/lib/timeParser";
+import { formatMinutesToHuman } from "@/lib/timeParser";
 import { trpc } from "@/lib/trpc";
 import { createScheduleOutboxId, listPendingScheduleOperations, removePendingScheduleOperation, savePendingScheduleOperation, setPendingScheduleOperationError } from "@/lib/scheduleOutbox";
 
@@ -23,8 +23,12 @@ type ScheduleLike = {
   notes: string | null;
 };
 
+const DATE_HEADING_FORMATTER = new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" });
+const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", weekday: "short" });
+const WEEKDAY_FORMATTER = new Intl.DateTimeFormat("ko-KR", { weekday: "short" });
+
 function dateHeading(day: Date) {
-  return new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(day);
+  return DATE_HEADING_FORMATTER.format(day);
 }
 
 function parseScheduleNotes(notes: string | null | undefined): { category: ScheduleCategory; duration: number; breakTime: number } {
@@ -46,9 +50,18 @@ function formatTime(value: Date | string | null) {
   return new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 
-function formatRange(item: ScheduleLike) {
-  const start = formatTime(item.plannedStartAt);
-  return item.plannedEndAt ? `${start}–${formatTime(item.plannedEndAt)}` : start;
+function formatShortDate(value: Date | string | null) {
+  if (!value) return "날짜 미정";
+  return SHORT_DATE_FORMATTER.format(new Date(value));
+}
+
+const KOREA_HOLIDAYS_2026 = new Set(["2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-01", "2026-03-02", "2026-05-05", "2026-05-24", "2026-05-25", "2026-06-03", "2026-06-06", "2026-07-17", "2026-08-15", "2026-08-17", "2026-09-24", "2026-09-25", "2026-09-26", "2026-10-03", "2026-10-05", "2026-10-09", "2026-12-25"]);
+
+function isRestDay(value: Date | string | null) {
+  if (!value) return false;
+  const date = new Date(value);
+  const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return date.getDay() === 0 || date.getDay() === 6 || KOREA_HOLIDAYS_2026.has(key);
 }
 
 function categoryMeta(item: ScheduleLike) {
@@ -88,35 +101,52 @@ export default function Today() {
   const [editingSchedule, setEditingSchedule] = useState<ScheduleLike | null>(null);
   const [initialCategory, setInitialCategory] = useState<ScheduleCategory>("project");
   const [filter, setFilter] = useState<"all" | "task" | "meeting" | "personal" | "urgent">("all");
+  const [viewMode, setViewMode] = useState<"day" | "week">("day");
+  const [optimisticStatuses, setOptimisticStatuses] = useState<Record<number, ScheduleLike["status"]>>({});
   const [, setLocation] = useLocation();
 
   const scheduleWindow = useMemo(() => {
     const start = new Date(day);
     const end = new Date(day);
-    end.setDate(end.getDate() + 1);
+    end.setDate(end.getDate() + (viewMode === "week" ? 7 : 1));
     return { start, end };
-  }, [day]);
+  }, [day, viewMode]);
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => {
+    const value = new Date(day);
+    value.setDate(value.getDate() + index);
+    return value;
+  }), [day]);
   const overview = trpc.workspace.overview.useQuery(scheduleWindow);
   const utils = trpc.useUtils();
   const data = overview.data;
   const allSchedules = (data?.schedules ?? []) as ScheduleLike[];
-  const schedules = allSchedules.filter(item => {
+  const schedules = useMemo(() => allSchedules.filter(item => {
     if (filter === "all") return true;
     if (filter === "urgent") return parseScheduleNotes(item.notes).category === "urgent" || item.scheduleFlags?.includes("urgent");
     return (item.scheduleType ?? (parseScheduleNotes(item.notes).category === "daily" ? "personal" : "task")) === filter;
-  });
-  const completedCount = schedules.filter(item => item.status === "completed").length;
-  const pendingCount = schedules.filter(item => item.status === "planned" || item.status === "in_progress").length;
-  const activeSchedule = schedules.find(item => item.status === "in_progress") ?? schedules.find(item => item.status === "planned");
-  const isToday = day.toDateString() === new Date().toDateString();
-
+  }), [allSchedules, filter]);
+  const orderedSchedules = useMemo(() => [...schedules].sort((left, right) => {
+    const leftStatus = optimisticStatuses[left.id] ?? left.status;
+    const rightStatus = optimisticStatuses[right.id] ?? right.status;
+    const completedOrder = Number(leftStatus === "completed") - Number(rightStatus === "completed");
+    if (completedOrder !== 0) return completedOrder;
+    const leftTime = left.plannedStartAt ? new Date(left.plannedStartAt).getTime() : Number.MAX_SAFE_INTEGER;
+    const rightTime = right.plannedStartAt ? new Date(right.plannedStartAt).getTime() : Number.MAX_SAFE_INTEGER;
+    return leftTime - rightTime;
+  }), [schedules, optimisticStatuses]);
+  const completedCount = useMemo(() => schedules.filter(item => (optimisticStatuses[item.id] ?? item.status) === "completed").length, [schedules, optimisticStatuses]);
+  const pendingCount = useMemo(() => schedules.filter(item => { const status = optimisticStatuses[item.id] ?? item.status; return status === "planned" || status === "in_progress"; }).length, [schedules, optimisticStatuses]);
   const invalidate = () => {
     void utils.workspace.overview.invalidate();
     void utils.workspace.continue.invalidate();
   };
   const setScheduleStatus = trpc.workspace.setScheduleStatus.useMutation({
-    onSuccess: () => invalidate(),
+    onSuccess: (_result, variables) => {
+      setOptimisticStatuses(current => { const next = { ...current }; delete next[variables.id]; return next; });
+      invalidate();
+    },
     onError: async (error, variables) => {
+      setOptimisticStatuses(current => { const next = { ...current }; delete next[variables.id]; return next; });
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         await savePendingScheduleOperation({ id: createScheduleOutboxId(), kind: "status", payload: variables as Record<string, unknown>, createdAt: Date.now(), lastError: error.message });
         toast.message("오프라인입니다. 상태 변경을 연결되면 전송합니다.");
@@ -174,13 +204,6 @@ export default function Today() {
     return () => window.removeEventListener("online", onOnline);
   }, []);
 
-  const moveDay = (amount: number) => {
-    setDay(current => {
-      const next = new Date(current);
-      next.setDate(next.getDate() + amount);
-      return next;
-    });
-  };
   const openNewSchedule = (category: ScheduleCategory = "project") => {
     setInitialCategory(category);
     setEditingSchedule(null);
@@ -191,76 +214,85 @@ export default function Today() {
     setShowSchedule(true);
   };
 
-  const grouped = schedules.reduce<Record<string, ScheduleLike[]>>((groups, item) => {
-    const hour = item.plannedStartAt ? new Date(item.plannedStartAt).getHours() : 23;
-    const group = hour < 12 ? "오전" : hour < 18 ? "오후" : "저녁";
-    (groups[group] ??= []).push(item);
-    return groups;
-  }, {});
+  const moveWeek = (amount: number) => {
+    setDay(current => {
+      const next = new Date(current);
+      next.setDate(next.getDate() + amount * 7);
+      return next;
+    });
+  };
+  const moveDay = (amount: number) => {
+    setDay(current => {
+      const next = new Date(current);
+      next.setDate(next.getDate() + amount);
+      return next;
+    });
+  };
+  const goToday = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    setDay(today);
+    setViewMode("day");
+  };
 
   return (
-    <div className="mx-auto max-w-3xl pb-24">
-      <header className="mb-3 flex items-center justify-between gap-2">
-        <button type="button" onClick={() => moveDay(-1)} aria-label="전날 일정 보기" className="flex h-11 w-11 items-center justify-center rounded-xl text-2xl text-slate-500 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
-        <div className="min-w-0 text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">오늘의 일정</p>
-          <h1 className="truncate text-xl font-black text-slate-950">{dateHeading(day)}</h1>
-          {!isToday && <button type="button" onClick={() => { const today = new Date(); today.setHours(0, 0, 0, 0); setDay(today); }} className="text-xs font-bold text-emerald-700 underline underline-offset-2">오늘로 이동</button>}
+    <div className="mx-auto max-w-5xl pb-16">
+      <header className="relative mb-3 flex min-h-11 items-center justify-center">
+        <button type="button" onClick={() => viewMode === "week" ? moveWeek(-1) : moveDay(-1)} aria-label={viewMode === "week" ? "이전 7일 일정 보기" : "전날 일정 보기"} className="absolute left-0 flex h-11 w-11 items-center justify-center rounded-xl text-2xl text-slate-500 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
+        <div className="w-full overflow-x-auto px-8 text-center">
+          {viewMode === "day" ? <h1 className="truncate text-xl font-black text-slate-950">{dateHeading(day)}</h1> : <div className="mx-auto flex w-max min-w-full items-center justify-center gap-3 whitespace-nowrap text-xs font-black text-slate-700 sm:gap-6">{weekDays.map(value => <span key={value.toISOString()} className={`shrink-0 px-0.5 ${isRestDay(value) ? "text-red-500" : undefined}`}>{value.getMonth() + 1}/{value.getDate()} {WEEKDAY_FORMATTER.format(value)}</span>)}</div>}
         </div>
-        <button type="button" onClick={() => moveDay(1)} aria-label="다음 날 일정 보기" className="flex h-11 w-11 items-center justify-center rounded-xl text-2xl text-slate-500 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>
+        <button type="button" onClick={() => viewMode === "week" ? moveWeek(1) : moveDay(1)} aria-label={viewMode === "week" ? "다음 7일 일정 보기" : "다음 날 일정 보기"} className="absolute right-0 flex h-11 w-11 items-center justify-center rounded-xl text-2xl text-slate-500 hover:bg-slate-100"><ChevronRight className="h-5 w-5" /></button>
       </header>
 
-      <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 shadow-sm ring-1 ring-slate-200/70">
-        <p className="text-sm font-extrabold text-slate-800">오늘 {schedules.length}개 · 완료 {completedCount}개 · 남음 {pendingCount}개</p>
-        <button type="button" onClick={() => openNewSchedule()} className="pressable inline-flex h-10 shrink-0 items-center gap-1 rounded-lg bg-emerald-700 px-3 text-sm font-black text-white hover:bg-emerald-800"><Plus className="h-4 w-4" /> 일정 추가</button>
+      <div className="mb-2 grid grid-cols-2 rounded-lg bg-slate-100 p-1" role="tablist" aria-label="일정 보기 방식">
+        <button type="button" role="tab" aria-selected={viewMode === "day"} onClick={goToday} className={`h-9 touch-manipulation rounded-md text-xs font-black ${viewMode === "day" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>오늘</button>
+        <button type="button" role="tab" aria-selected={viewMode === "week"} onClick={() => setViewMode("week")} className={`h-9 touch-manipulation rounded-md text-xs font-black ${viewMode === "week" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}>7일 보기</button>
       </div>
 
-      {activeSchedule && (
-        <section aria-label="현재 또는 다음 일정" className="mb-3 rounded-xl bg-slate-900 px-3.5 py-3 text-white shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">{activeSchedule.status === "in_progress" ? "지금" : "다음 일정"}</p>
-              <h2 className="mt-0.5 truncate text-lg font-black">{activeSchedule.title}</h2>
-              <p className="mt-0.5 text-sm font-semibold text-slate-300">{formatRange(activeSchedule)} · {formatMinutesToHuman(parseScheduleNotes(activeSchedule.notes).duration)}</p>
-            </div>
-            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${categoryMeta(activeSchedule).color}`} aria-label={`${categoryMeta(activeSchedule).label} 종류`} />
-          </div>
-          <div className="mt-2 flex gap-2">
-            <button type="button" onClick={() => setScheduleStatus.mutate({ id: activeSchedule.id, expectedRevision: activeSchedule.revision, status: activeSchedule.status === "in_progress" ? "completed" : "in_progress" })} className="pressable h-10 rounded-lg bg-white px-3.5 text-sm font-black text-slate-900">{activeSchedule.status === "in_progress" ? "완료" : "시작"}</button>
-            <button type="button" onClick={() => openEditSchedule(activeSchedule)} className="h-10 rounded-lg px-3 text-sm font-bold text-slate-300 hover:bg-white/10">수정</button>
-          </div>
-        </section>
-      )}
+      <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-1 shadow-sm ring-1 ring-slate-200/70">
+        <p className="text-sm font-extrabold text-slate-800">{viewMode === "week" ? "7일 일정" : "오늘"} {schedules.length}개 · 완료 {completedCount}개 · 남음 {pendingCount}개</p>
+        <button type="button" onClick={() => openNewSchedule()} className="pressable inline-flex h-9 shrink-0 touch-manipulation items-center gap-1 rounded-md bg-emerald-700 px-2.5 text-xs font-black text-white hover:bg-emerald-800"><Plus className="h-3.5 w-3.5" /> 일정 추가</button>
+      </div>
 
-      <section aria-label="오늘 일정" className="rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-slate-200/70">
+      <section aria-label={viewMode === "week" ? "7일 일정" : "오늘 일정"} className="rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-slate-200/70">
         <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1" aria-label="일정 종류 필터">
-          {([["all", "전체"], ["task", "작업"], ["meeting", "회의"], ["personal", "일상"], ["urgent", "긴급"]] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} className={`h-9 shrink-0 rounded-full px-3 text-xs font-bold ${filter === value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{label}</button>)}
+          {([["all", "전체"], ["task", "작업"], ["meeting", "회의"], ["personal", "일상"], ["urgent", "긴급"]] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} className={`h-8 shrink-0 touch-manipulation rounded-full px-2.5 text-[11px] font-bold ${filter === value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{label}</button>)}
         </div>
-        {schedules.length ? Object.entries(grouped).map(([group, items]) => (
-          <div key={group} className="py-1.5">
-            <h2 className="mb-1 border-b border-slate-100 pb-1 text-xs font-black text-slate-500">{group}</h2>
-            {items.map(item => {
-              const done = item.status === "completed";
-              const active = item.status === "in_progress";
+        {orderedSchedules.length ? orderedSchedules.map(item => {
+              const displayStatus = optimisticStatuses[item.id] ?? item.status;
+              const done = displayStatus === "completed";
+              const active = displayStatus === "in_progress";
               const meta = categoryMeta(item);
               const duration = parseScheduleNotes(item.notes).duration;
               return (
-                <article key={item.id} className={`group flex min-h-[48px] items-center gap-2 border-b border-slate-100 py-1.5 last:border-0 ${active ? "bg-emerald-50/70" : ""}`}>
-                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${meta.color}`} aria-hidden="true" />
-                  <span className={`w-[74px] shrink-0 font-mono text-[13px] font-bold ${done ? "text-slate-400" : "text-slate-600"}`}>{formatTime(item.plannedStartAt)}</span>
+                <article key={item.id} className={`group flex min-h-[36px] items-center gap-1.5 border-b border-slate-100 py-0 last:border-0 sm:gap-2 ${active ? "bg-emerald-50/70" : ""}`}>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={done}
+                    aria-label={`${item.title} ${done ? "다시 진행" : "완료"}`}
+                    title={done ? "다시 진행" : "완료 처리"}
+                    onClick={() => { const nextStatus = done ? "planned" : "completed"; setOptimisticStatuses(current => ({ ...current, [item.id]: nextStatus })); setScheduleStatus.mutate({ id: item.id, expectedRevision: item.revision, status: nextStatus }); }}
+                    className="flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded p-1"
+                  >
+                    <span className={`flex h-7 w-7 items-center justify-center rounded border-2 transition-colors ${done ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300 bg-white text-transparent hover:border-emerald-500"}`}>
+                      <Check className="h-3 w-3" aria-hidden="true" />
+                    </span>
+                  </button>
+                  {viewMode === "week" && <span className={`w-[58px] shrink-0 text-[11px] font-bold ${isRestDay(item.plannedStartAt) ? "text-red-500" : "text-slate-500"}`}>{formatShortDate(item.plannedStartAt)}</span>}
+                  <span className={`hidden h-2 w-2 shrink-0 rounded-full sm:block ${meta.color}`} aria-hidden="true" />
+                  <span className={`w-[56px] shrink-0 font-mono text-[13px] font-extrabold sm:w-[72px] sm:text-sm ${done ? "text-slate-400" : "text-slate-700"}`}>{formatTime(item.plannedStartAt)}</span>
                   <div className="min-w-0 flex-1">
-                    <p className={`truncate text-[15px] font-extrabold ${done ? "text-slate-400 line-through" : "text-slate-900"}`}>{item.title}</p>
-                    {active && <p className="text-xs font-bold text-emerald-700">진행 중 · {formatMinutesToHuman(duration)}</p>}
-                    {!active && item.tags?.length ? <p className="truncate text-[11px] font-semibold text-slate-400">#{item.tags.slice(0, 2).join(" #")}</p> : null}
+                    <p className={`truncate text-[15px] font-black leading-tight ${done ? "text-slate-400" : "text-slate-950"}`}>{item.title}</p>
+                    {active && <p className="text-[10px] font-bold text-emerald-700">진행 중 · {formatMinutesToHuman(duration)}</p>}
+                    {!active && item.tags?.length ? <p className="hidden truncate text-[11px] font-semibold text-slate-400 sm:block">#{item.tags.slice(0, 2).join(" #")}</p> : null}
                   </div>
                   <span className={`hidden shrink-0 text-[11px] font-bold sm:inline ${meta.text}`}>{meta.label}</span>
-                  <span className="shrink-0 text-sm font-black text-slate-500" aria-label={done ? "완료" : active ? "진행 중" : "예정"}>{done ? "✓" : active ? "▶" : "○"}</span>
-                  <button type="button" onClick={() => openEditSchedule(item)} aria-label={`${item.title} 수정`} className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-800"><Pencil className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => openEditSchedule(item)} aria-label={`${item.title} 수정`} className="flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-800"><Pencil className="h-3.5 w-3.5" /></button>
                 </article>
               );
-            })}
-          </div>
-        )) : <EmptySchedule onAdd={() => openNewSchedule()} />}
+            }) : <EmptySchedule onAdd={() => openNewSchedule()} />}
       </section>
 
       <div className="mt-3 flex gap-2">
@@ -279,18 +311,85 @@ function EmptySchedule({ onAdd }: { onAdd: () => void }) {
   return <div className="py-8 text-center"><p className="text-sm font-extrabold text-slate-800">등록된 일정이 없습니다.</p><button type="button" onClick={onAdd} className="mt-2 text-sm font-bold text-emerald-700 underline underline-offset-2">+ 첫 일정 추가</button></div>;
 }
 
+const SCHEDULE_DURATION_OPTIONS = Array.from({ length: 10 }, (_, index) => (index + 1) * 30);
+const SCHEDULE_TAGS_KEY = "personal-work-os:schedule-tags:v1";
+
+function readScheduleTags() {
+  if (typeof window === "undefined") return [];
+  try {
+    const value = JSON.parse(window.localStorage.getItem(SCHEDULE_TAGS_KEY) ?? "[]");
+    return Array.isArray(value) ? value.filter((tag): tag is string => typeof tag === "string").slice(0, 12) : [];
+  } catch { return []; }
+}
+
+function timeToMinutes(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return (hours * 60 + minutes) % (24 * 60);
+}
+
+function minutesToTime(value: number) {
+  const minutes = ((value % (24 * 60)) + (24 * 60)) % (24 * 60);
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function ClockTimePicker({ value, onChange, onClose }: { value: string; onChange: (value: string) => void; onClose: () => void }) {
+  const dialRef = useRef<HTMLDivElement>(null);
+  const initial = timeToMinutes(value);
+  const [period, setPeriod] = useState<"오전" | "오후">(initial >= 12 * 60 ? "오후" : "오전");
+  const [hour, setHour] = useState(Math.floor(initial / 60) % 12 || 12);
+  const [minute, setMinute] = useState(Math.round((initial % 60) / 5) * 5 % 60);
+  const [phase, setPhase] = useState<"hour" | "minute">("hour");
+  const selectedTime = () => minutesToTime((period === "오후" ? 12 * 60 : 0) + (hour % 12) * 60 + minute);
+  const setSelectedPeriod = (nextPeriod: "오전" | "오후") => {
+    setPeriod(nextPeriod);
+    onChange(minutesToTime((nextPeriod === "오후" ? 12 * 60 : 0) + (hour % 12) * 60 + minute));
+  };
+  const updateFromPointer = (event: PointerEvent<HTMLDivElement>) => {
+    const dial = dialRef.current;
+    if (!dial) return;
+    const rect = dial.getBoundingClientRect();
+    const x = event.clientX - rect.left - rect.width / 2;
+    const y = event.clientY - rect.top - rect.height / 2;
+    const angle = ((Math.atan2(y, x) * 180) / Math.PI + 90 + 360) % 360;
+    const slot = Math.round(angle / 30) % 12;
+    if (phase === "hour") {
+      const nextHour = slot === 0 ? 12 : slot;
+      setHour(nextHour);
+      setMinute(0);
+      onChange(minutesToTime((period === "오후" ? 12 * 60 : 0) + (nextHour % 12) * 60));
+    } else {
+      const nextMinute = slot * 5;
+      setMinute(nextMinute);
+      onChange(minutesToTime((period === "오후" ? 12 * 60 : 0) + (hour % 12) * 60 + nextMinute));
+    }
+  };
+  const numbers = phase === "hour" ? Array.from({ length: 12 }, (_, index) => index === 0 ? "12" : String(index)) : Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, "0"));
+  const handAngle = phase === "hour" ? (hour % 12) * 30 : minute * 6;
+  return <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"><section role="dialog" aria-modal="true" aria-label="시계로 시작 시간 선택" className="w-full max-w-sm rounded-t-2xl bg-white p-4 shadow-2xl sm:rounded-2xl"><div className="flex items-center justify-between"><div><p className="text-xs font-bold text-sky-600">{phase === "hour" ? "시침으로 시간 선택" : "분침으로 분 선택"}</p><h3 className="text-2xl font-black text-slate-950">{selectedTime()}</h3></div><button type="button" onClick={onClose} aria-label="시계 닫기" className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="mt-3 flex rounded-lg bg-slate-100 p-1"><button type="button" onClick={() => setSelectedPeriod("오전")} className={`h-10 flex-1 rounded-md text-sm font-black ${period === "오전" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500"}`}>오전</button><button type="button" onClick={() => setSelectedPeriod("오후")} className={`h-10 flex-1 rounded-md text-sm font-black ${period === "오후" ? "bg-white text-sky-700 shadow-sm" : "text-slate-500"}`}>오후</button></div><div ref={dialRef} onPointerDown={event => { dialRef.current?.setPointerCapture(event.pointerId); updateFromPointer(event); }} onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) updateFromPointer(event); }} className="relative mx-auto mt-4 aspect-square w-full max-w-[280px] touch-none select-none rounded-full bg-sky-50 ring-8 ring-sky-100"><span className="absolute inset-0" style={{ transform: `rotate(${handAngle}deg)` }}><span className="absolute bottom-1/2 left-1/2 h-[42%] w-1 -translate-x-1/2 rounded-full bg-sky-600" /></span><span className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-700 ring-4 ring-white" />{numbers.map((number, index) => { const angle = index * 30; return <span key={number} className="absolute left-1/2 top-1/2 text-sm font-black text-slate-700" style={{ transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(-112px) rotate(-${angle}deg)` }}>{number}</span>; })}</div><p className="mt-3 text-center text-xs font-bold text-slate-500">{phase === "hour" ? "시계에서 시간을 먼저 선택하세요" : "원하는 분 위치를 누르세요"}</p>{phase === "hour" ? <button type="button" onClick={() => setPhase("minute")} className="mt-3 h-12 w-full rounded-lg bg-sky-700 text-sm font-black text-white">분 선택하기</button> : <div className="mt-3 flex gap-2"><button type="button" onClick={() => setPhase("hour")} className="h-12 flex-1 rounded-lg bg-slate-100 text-sm font-black text-slate-700">시간 다시 선택</button><button type="button" onClick={onClose} className="h-12 flex-1 rounded-lg bg-sky-700 text-sm font-black text-white">선택 완료</button></div>}</section></div>;
+}
+
 function SmartScheduleComposer({ tasks, initialCategory, baseDate, schedule, onCancel, onCarryOver, onSubmit, busy }: { tasks: Array<{ id: number; title: string }>; initialCategory: ScheduleCategory; baseDate: Date; schedule: ScheduleLike | null; onCancel: () => void; onCarryOver?: () => void; onSubmit: (values: { title: string; taskId: number | null; scheduleType: "task" | "meeting" | "personal" | "review"; scheduleFlags: Array<"urgent" | "focus" | "external" | "recurring" | "from_idea">; tags: string[]; plannedStartAt: Date; plannedEndAt: Date; notes: string }) => void; busy: boolean }) {
   const parsed = parseScheduleNotes(schedule?.notes);
   const [category, setCategory] = useState<ScheduleCategory>(schedule ? parsed.category : initialCategory);
   const [title, setTitle] = useState(schedule?.title ?? "");
   const [startTime, setStartTime] = useState(schedule?.plannedStartAt ? formatTime(schedule.plannedStartAt) : "09:00");
-  const [durationInput, setDurationInput] = useState(schedule ? formatMinutesToHuman(parsed.duration) : "1h");
+  const [showClock, setShowClock] = useState(false);
+  const [duration, setDuration] = useState(schedule ? Math.min(300, Math.max(30, parsed.duration)) : 60);
   const [taskId, setTaskId] = useState(schedule?.taskId ? String(schedule.taskId) : "");
-  const [tags, setTags] = useState<string[]>([]);
-  const duration = parseTimeToMinutes(durationInput) || 60;
+  const [tags, setTags] = useState<string[]>(schedule?.tags ?? []);
+  const [tagDraft, setTagDraft] = useState("");
+  const [recentTags, setRecentTags] = useState(readScheduleTags);
   const recommendation = suggestedCategory(title);
   const endTime = useMemo(() => { const [hours, minutes] = startTime.split(":").map(Number); const total = hours * 60 + minutes + duration; return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`; }, [duration, startTime]);
-
+  const addTag = (value: string) => {
+    const tag = value.trim().replace(/\s+/g, " ");
+    if (!tag || tags.includes(tag) || tags.length >= 5) return;
+    const next = [tag, ...recentTags.filter(item => item !== tag)].slice(0, 12);
+    setTags(current => [...current, tag]);
+    setRecentTags(next);
+    window.localStorage.setItem(SCHEDULE_TAGS_KEY, JSON.stringify(next));
+    setTagDraft("");
+  };
   const submit = () => {
     if (!title.trim()) return;
     const [hours, minutes] = startTime.split(":").map(Number);
@@ -301,5 +400,5 @@ function SmartScheduleComposer({ tasks, initialCategory, baseDate, schedule, onC
     onSubmit({ title: title.trim(), taskId: category === "project" && taskId ? Number(taskId) : null, scheduleType, scheduleFlags: category === "urgent" ? ["urgent"] : [], tags, plannedStartAt: start, plannedEndAt: end, notes: JSON.stringify({ category, duration, breakTime: 0 }) });
   };
 
-  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"><section role="dialog" aria-modal="true" className="w-full max-w-md rounded-t-2xl bg-white p-4 shadow-2xl sm:rounded-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-black text-slate-950">{schedule ? "일정 수정" : "새 일정"}</h2><button type="button" onClick={onCancel} aria-label="일정 창 닫기" className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="mt-3 grid grid-cols-3 gap-1.5"><button type="button" onClick={() => setCategory("project")} className={`h-10 rounded-lg text-sm font-bold ${category === "project" ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-700"}`}>작업</button><button type="button" onClick={() => setCategory("daily")} className={`h-10 rounded-lg text-sm font-bold ${category === "daily" ? "bg-stone-600 text-white" : "bg-slate-100 text-slate-700"}`}>일상</button><button type="button" onClick={() => setCategory("urgent")} className={`h-10 rounded-lg text-sm font-bold ${category === "urgent" ? "bg-orange-600 text-white" : "bg-slate-100 text-slate-700"}`}>긴급</button></div><input autoFocus value={title} onChange={event => setTitle(event.target.value)} className="mono-input mt-3 h-11 text-sm font-bold" placeholder="무엇을 할까요?" />{recommendation && recommendation !== category && <p className="mt-1 text-xs font-bold text-sky-700">추천 분류: {recommendation === "daily" ? "일상" : recommendation === "urgent" ? "긴급" : "작업"}</p>}{category === "project" && <select value={taskId} onChange={event => { setTaskId(event.target.value); const task = tasks.find(item => String(item.id) === event.target.value); if (task && !title) setTitle(task.title); }} className="mono-input mt-2 h-11 text-sm"><option value="">연결할 작업 선택 (선택)</option>{tasks.map(task => <option key={task.id} value={task.id}>{task.title}</option>)}</select>}<div className="mt-3 grid grid-cols-2 gap-2"><label className="text-xs font-bold text-slate-600">시작<input type="time" value={startTime} onChange={event => setStartTime(event.target.value)} className="mono-input mt-1 h-11 text-sm" /></label><label className="text-xs font-bold text-slate-600">예상 소요<input value={durationInput} onChange={event => setDurationInput(event.target.value)} className="mono-input mt-1 h-11 text-sm" placeholder="1h" /></label></div><div className="mt-3"><label className="text-xs font-bold text-slate-600">태그 <span className="font-normal text-slate-400">(선택, 쉼표로 구분)</span><input value={tags.join(", ")} onChange={event => setTags(event.target.value.split(",").map(tag => tag.trim()).filter(Boolean).slice(0, 3))} className="mono-input mt-1 h-11 text-sm" placeholder="기획, 개발" /></label>{suggestedTags(title).length > 0 && tags.length === 0 && <button type="button" onClick={() => setTags(suggestedTags(title))} className="mt-1 text-xs font-bold text-sky-700 underline underline-offset-2">추천 태그: {suggestedTags(title).join(", ")}</button>}</div><p className="mt-2 text-sm font-bold text-slate-600">{startTime}–{endTime} · {formatMinutesToHuman(duration)}</p><div className="mt-4 flex gap-2">{onCarryOver && <button type="button" onClick={onCarryOver} disabled={busy} className="h-12 flex-1 rounded-lg bg-amber-50 text-sm font-black text-amber-800 ring-1 ring-amber-200">내일로 미루기</button>}<button type="button" onClick={submit} disabled={busy || !title.trim()} className="h-12 flex-1 rounded-lg bg-emerald-700 text-sm font-black text-white hover:bg-emerald-800 disabled:opacity-40">{busy ? "저장 중…" : schedule ? "수정 저장" : "일정 저장"}</button></div></section></div>;
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"><section role="dialog" aria-modal="true" className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl sm:rounded-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-black text-slate-950">{schedule ? "일정 수정" : "새 일정"}</h2><button type="button" onClick={onCancel} aria-label="일정 창 닫기" className="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button></div><div className="mt-3 grid grid-cols-3 gap-1.5"><button type="button" onClick={() => setCategory("project")} className={`h-11 rounded-lg text-sm font-bold ${category === "project" ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-700"}`}>작업</button><button type="button" onClick={() => setCategory("daily")} className={`h-11 rounded-lg text-sm font-bold ${category === "daily" ? "bg-stone-600 text-white" : "bg-slate-100 text-slate-700"}`}>일상</button><button type="button" onClick={() => setCategory("urgent")} className={`h-11 rounded-lg text-sm font-bold ${category === "urgent" ? "bg-orange-600 text-white" : "bg-slate-100 text-slate-700"}`}>긴급</button></div><input autoFocus value={title} onChange={event => setTitle(event.target.value)} className="mono-input mt-3 h-12 text-sm font-bold" placeholder="무엇을 할까요?" />{recommendation && recommendation !== category && <p className="mt-1 text-xs font-bold text-sky-700">추천 분류: {recommendation === "daily" ? "일상" : recommendation === "urgent" ? "긴급" : "작업"}</p>}{category === "project" && <select value={taskId} onChange={event => { setTaskId(event.target.value); const task = tasks.find(item => String(item.id) === event.target.value); if (task && !title) setTitle(task.title); }} className="mono-input mt-2 h-12 text-sm"><option value="">연결할 작업 선택 (선택)</option>{tasks.map(task => <option key={task.id} value={task.id}>{task.title}</option>)}</select>}<div className="mt-3 rounded-xl border border-sky-100 bg-sky-50/50 p-3"><div className="grid grid-cols-2 gap-2"><label className="text-xs font-bold text-slate-600">시작 시간<button type="button" onClick={() => setShowClock(true)} aria-label="시계 바늘로 시작 시간 선택" className="mono-input mt-1 flex h-12 w-full items-center justify-center gap-2 text-base font-black"><Clock3 className="h-5 w-5 text-sky-700" />{startTime}</button></label><label className="text-xs font-bold text-slate-600">예상 소요<select value={duration} onChange={event => setDuration(Number(event.target.value))} className="mono-input mt-1 h-12 text-base font-black">{SCHEDULE_DURATION_OPTIONS.map(minutes => <option key={minutes} value={minutes}>{formatMinutesToHuman(minutes)}</option>)}</select></label></div><p className="mt-2 text-center text-sm font-black text-sky-900">{startTime} → {endTime} · {formatMinutesToHuman(duration)}</p></div><section className="mt-3 rounded-xl border border-violet-100 bg-violet-50/50 p-3"><div className="flex items-center justify-between"><label className="text-xs font-bold text-slate-600">태그 <span className="font-normal text-slate-400">(최대 5개)</span></label>{tags.length ? <button type="button" onClick={() => setTags([])} className="text-xs font-bold text-slate-500 underline">전체 지우기</button> : null}</div>{tags.length ? <div className="mt-2 flex flex-wrap gap-1.5">{tags.map(tag => <button type="button" key={tag} onClick={() => setTags(current => current.filter(item => item !== tag))} className="min-h-9 rounded-full bg-violet-700 px-3 text-xs font-bold text-white">#{tag} ×</button>)}</div> : null}<div className="mt-2 flex gap-2"><input value={tagDraft} onChange={event => setTagDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addTag(tagDraft); } }} className="mono-input h-11 min-w-0 flex-1 text-sm" placeholder="태그 입력" /><button type="button" onClick={() => addTag(tagDraft)} disabled={!tagDraft.trim()} className="h-11 rounded-lg bg-white px-3 text-xs font-black text-violet-700 ring-1 ring-violet-200 disabled:opacity-40">추가</button></div>{recentTags.filter(tag => !tags.includes(tag)).length ? <div className="mt-3"><p className="text-[11px] font-bold text-violet-500">자주 쓰는 태그 · 눌러서 추가</p><div className="mt-1.5 flex flex-wrap gap-1.5">{recentTags.filter(tag => !tags.includes(tag)).map(tag => <button type="button" key={tag} onClick={() => addTag(tag)} className="min-h-9 rounded-full bg-white px-3 text-xs font-bold text-violet-700 ring-1 ring-violet-200">#{tag}</button>)}</div></div> : null}</section><div className="mt-4 flex gap-2">{onCarryOver && <button type="button" onClick={onCarryOver} disabled={busy} className="h-12 flex-1 rounded-lg bg-amber-50 text-sm font-black text-amber-800 ring-1 ring-amber-200">내일로 미루기</button>}<button type="button" onClick={submit} disabled={busy || !title.trim()} className="h-12 flex-1 rounded-lg bg-emerald-700 text-sm font-black text-white hover:bg-emerald-800 disabled:opacity-40">{busy ? "저장 중…" : schedule ? "수정 저장" : "일정 저장"}</button></div></section>{showClock && <ClockTimePicker value={startTime} onChange={setStartTime} onClose={() => setShowClock(false)} />}</div>;
 }
