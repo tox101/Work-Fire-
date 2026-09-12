@@ -47,7 +47,7 @@ function splitDailyContent(value: string) {
   return { issue: value.slice(0, index).trim(), deadline: value.slice(index + marker.length).trim() };
 }
 
-export function CapturePanel({ workspace, onComplete, compact = false, mode = "capture" }: { workspace?: WorkspaceData; onComplete?: () => void; compact?: boolean; mode?: "daily" | "capture" }) {
+export function CapturePanel({ workspace, onComplete, compact = false, mode = "capture", recordDate }: { workspace?: WorkspaceData; onComplete?: () => void; compact?: boolean; mode?: "daily" | "capture"; recordDate?: Date }) {
   const [draft] = useState(() => readCaptureDraft(mode));
   const [issueContent, setIssueContent] = useState(draft.issueContent ?? draft.content);
   const [deadlineContent, setDeadlineContent] = useState(draft.deadlineContent ?? "");
@@ -61,7 +61,7 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
   const [pendingCaptures, setPendingCaptures] = useState<PendingCapture[]>([]);
   const [syncingCaptureId, setSyncingCaptureId] = useState<string | null>(null);
   const [dailyRecordId, setDailyRecordId] = useState<number | null>(null);
-  const [todayKey, setTodayKey] = useState(() => new Date().toDateString());
+  const [todayKey, setTodayKey] = useState(() => (recordDate ?? new Date()).toDateString());
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
   const fileInput = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
@@ -91,7 +91,7 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
     onError: error => toast.error(error.message),
   });
   const selectedTask = useMemo(() => workspace?.tasks.find(task => String(task.id) === taskId), [workspace?.tasks, taskId]);
-  useEffect(() => { const timer = window.setInterval(() => setTodayKey(current => { const next = new Date().toDateString(); return current === next ? current : next; }), 30000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { if (recordDate) setTodayKey(recordDate.toDateString()); }, [recordDate]);
   useEffect(() => {
     if (mode !== "daily") return;
     const existing = todayJournal.data?.find(record => record.sourceType === "journal");
@@ -170,7 +170,7 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
         id: createRequestId(),
         content: content.trim(),
         sourceType: mode === "daily" ? "journal" : (/^https?:\/\//.test(content.trim()) ? "link" : "capture"),
-        dailyDate: mode === "daily" ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}` : null,
+        dailyDate: mode === "daily" ? `${(recordDate ?? new Date()).getFullYear()}-${String((recordDate ?? new Date()).getMonth() + 1).padStart(2, "0")}-${String((recordDate ?? new Date()).getDate()).padStart(2, "0")}` : null,
         appendToRecordId: mode === "daily" ? dailyRecordId : null,
         taskId: selectedTask?.id ?? null,
         projectId: selectedTask?.projectId ?? (projectId ? Number(projectId) : null),
