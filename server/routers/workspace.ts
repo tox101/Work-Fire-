@@ -515,6 +515,16 @@ export const workspaceRouter = router({
     }
   }),
 
+  updateDailyRecord: protectedProcedure.input(z.object({ recordId: z.number().int().positive(), content: z.string().trim().min(1).max(12000) })).mutation(async ({ ctx, input }) => {
+    const db = await databaseOrThrow();
+    const [existing] = await db.select().from(records).where(and(eq(records.id, input.recordId), eq(records.userId, ctx.user.id))).limit(1);
+    await assertOwned(existing, ctx.user.id, "오늘기록");
+    if (existing.sourceType !== "journal") throw new TRPCError({ code: "BAD_REQUEST", message: "오늘기록만 수정할 수 있습니다." });
+    await db.update(records).set({ content: input.content }).where(and(eq(records.id, existing.id), eq(records.userId, ctx.user.id)));
+    const [updated] = await db.select().from(records).where(and(eq(records.id, existing.id), eq(records.userId, ctx.user.id))).limit(1);
+    return updated;
+  }),
+
   uploadAttachment: protectedProcedure.input(z.object({
     recordId: z.number().int().positive(),
     fileName: z.string().trim().min(1).max(320),

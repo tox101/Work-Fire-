@@ -106,7 +106,6 @@ export default function Today() {
     return value;
   }), [day]);
   const overview = trpc.workspace.overview.useQuery(scheduleWindow);
-  const todayRecords = trpc.workspace.recordSearch.useQuery({ query: undefined, projectId: null, taskId: null, sourceType: "journal", start: day, end: new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1), sort: "oldest", tag: null });
   const utils = trpc.useUtils();
   const data = overview.data;
   const allSchedules = (data?.schedules ?? []) as ScheduleLike[];
@@ -301,11 +300,6 @@ export default function Today() {
           {mode === "daily" ? <><SquarePen className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "오늘기록 닫기" : "오늘기록"}</> : <><Plus className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "아이디어 닫기" : "아이디어"}</>}
         </button>)}
       </div>}
-
-      {viewMode === "day" && <section aria-label="오늘 작성한 오늘기록" className="mt-3 rounded-xl border border-emerald-100 bg-white p-3 shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-2"><h2 className="text-sm font-black text-slate-900">오늘 기록한 내용</h2><span className="text-xs font-bold text-emerald-700">{todayRecords.data?.length ?? 0}개</span></div>
-        {todayRecords.isLoading ? <div className="mt-3 h-16 animate-pulse rounded-lg bg-slate-100" /> : todayRecords.data?.length ? <div className="mt-3 space-y-2">{todayRecords.data.map(record => <article key={record.id} className="rounded-lg border border-slate-100 bg-slate-50/70 p-2.5"><p className="whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-900">{record.content}</p>{record.tags.length ? <p className="mt-1 text-xs font-bold text-emerald-700">{record.tags.map(tag => `#${tag}`).join(" ")}</p> : null}</article>)}</div> : <p className="mt-3 text-center text-xs font-semibold text-slate-400">아직 오늘 기록이 없습니다.</p>}
-      </section>}
 
       {viewMode === "day" && openRecordMode && <section className="mt-3"><CapturePanel mode={openRecordMode} workspace={data} onComplete={() => setOpenRecordMode(null)} /></section>}
 

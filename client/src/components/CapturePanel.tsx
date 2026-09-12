@@ -59,6 +59,7 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
   const fileInput = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
   const capture = trpc.workspace.captureRecord.useMutation();
+  const updateDailyRecord = trpc.workspace.updateDailyRecord.useMutation();
   const upload = trpc.workspace.uploadAttachment.useMutation();
   const recentTags = trpc.workspace.recentRecordTags.useQuery();
   const tagOptions = trpc.workspace.recordTagOptions.useQuery();
@@ -84,7 +85,7 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
   });
   const selectedTask = useMemo(() => workspace?.tasks.find(task => String(task.id) === taskId), [workspace?.tasks, taskId]);
   useEffect(() => { const timer = window.setInterval(() => setTodayKey(current => { const next = new Date().toDateString(); return current === next ? current : next; }), 30000); return () => window.clearInterval(timer); }, []);
-  useEffect(() => { if (mode === "daily") setDailyRecordId(todayJournal.data?.find(record => record.sourceType === "journal" || record.content.includes("[오늘 마감]"))?.id ?? null); }, [mode, todayJournal.data, todayKey]);
+  useEffect(() => { if (mode === "daily") { const existing = todayJournal.data?.find(record => record.sourceType === "journal"); setDailyRecordId(existing?.id ?? null); if (existing && !issueContent && !deadlineContent) setIssueContent(existing.content); } }, [deadlineContent, issueContent, mode, todayJournal.data, todayKey]);
   const content = [issueContent.trim(), deadlineContent.trim() ? `[오늘 마감]\n${deadlineContent.trim()}` : ""].filter(Boolean).join("\n\n");
   const hasDraft = Boolean(content || tags.length || projectId || taskId);
   const refreshPendingCaptures = useCallback(async () => {
@@ -139,6 +140,14 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
     event.preventDefault();
     if (!issueContent.trim() && !deadlineContent.trim()) return;
     try {
+      if (mode === "daily" && dailyRecordId) {
+        await updateDailyRecord.mutateAsync({ recordId: dailyRecordId, content: content.trim() });
+        await Promise.all([utils.workspace.recordSearch.invalidate(), utils.workspace.overview.invalidate()]);
+        toast.success("오늘기록을 저장했습니다.");
+        setIssueContent(""); setDeadlineContent(""); setTags([]); setFiles([]);
+        onComplete?.();
+        return;
+      }
       const oversizedFile = files.find(file => file.size > 8 * 1024 * 1024);
       if (oversizedFile) throw new Error(`${oversizedFile.name}: 8MB 이하의 파일만 첨부할 수 있습니다.`);
       const pending: PendingCapture = {
