@@ -40,6 +40,13 @@ function createRequestId() {
   return window.crypto.randomUUID();
 }
 
+function splitDailyContent(value: string) {
+  const marker = "[오늘 마감]";
+  const index = value.indexOf(marker);
+  if (index < 0) return { issue: value, deadline: "" };
+  return { issue: value.slice(0, index).trim(), deadline: value.slice(index + marker.length).trim() };
+}
+
 export function CapturePanel({ workspace, onComplete, compact = false, mode = "capture" }: { workspace?: WorkspaceData; onComplete?: () => void; compact?: boolean; mode?: "daily" | "capture" }) {
   const [draft] = useState(() => readCaptureDraft(mode));
   const [issueContent, setIssueContent] = useState(draft.issueContent ?? draft.content);
@@ -85,7 +92,16 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
   });
   const selectedTask = useMemo(() => workspace?.tasks.find(task => String(task.id) === taskId), [workspace?.tasks, taskId]);
   useEffect(() => { const timer = window.setInterval(() => setTodayKey(current => { const next = new Date().toDateString(); return current === next ? current : next; }), 30000); return () => window.clearInterval(timer); }, []);
-  useEffect(() => { if (mode === "daily") { const existing = todayJournal.data?.find(record => record.sourceType === "journal"); setDailyRecordId(existing?.id ?? null); if (existing && !issueContent && !deadlineContent) setIssueContent(existing.content); } }, [deadlineContent, issueContent, mode, todayJournal.data, todayKey]);
+  useEffect(() => {
+    if (mode !== "daily") return;
+    const existing = todayJournal.data?.find(record => record.sourceType === "journal");
+    setDailyRecordId(existing?.id ?? null);
+    if (existing) {
+      const parts = splitDailyContent(existing.content);
+      setIssueContent(parts.issue);
+      setDeadlineContent(parts.deadline);
+    }
+  }, [mode, todayJournal.data, todayKey]);
   const content = [issueContent.trim(), deadlineContent.trim() ? `[오늘 마감]\n${deadlineContent.trim()}` : ""].filter(Boolean).join("\n\n");
   const hasDraft = Boolean(content || tags.length || projectId || taskId);
   const refreshPendingCaptures = useCallback(async () => {
