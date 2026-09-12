@@ -198,6 +198,14 @@ export const workspaceRouter = router({
 
   recordDetail: protectedProcedure.input(z.object({ recordId: z.number().int().positive() })).query(async ({ ctx, input }) => getRecordDetail(ctx.user.id, input.recordId)),
 
+  deleteRecord: protectedProcedure.input(z.object({ recordId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await databaseOrThrow();
+    const [existing] = await db.select().from(records).where(and(eq(records.id, input.recordId), eq(records.userId, ctx.user.id))).limit(1);
+    await assertOwned(existing, ctx.user.id, "Record");
+    await db.delete(records).where(and(eq(records.id, input.recordId), eq(records.userId, ctx.user.id)));
+    return { success: true };
+  }),
+
   setRecordPinned: protectedProcedure.input(z.object({ recordId: z.number().int().positive(), isPinned: z.boolean() })).mutation(async ({ ctx, input }) => {
     const db = await databaseOrThrow();
     const [existing] = await db.select().from(records).where(and(eq(records.id, input.recordId), eq(records.userId, ctx.user.id))).limit(1);
@@ -459,7 +467,7 @@ export const workspaceRouter = router({
     return { success: true };
   }),
 
-  captureRecord: protectedProcedure.input(z.object({ content: z.string().trim().min(1).max(12000), sourceType: z.enum(["capture", "work_log", "journal", "link"]).optional(), projectId: z.number().int().positive().nullable().optional(), stageId: z.number().int().positive().nullable().optional(), taskId: z.number().int().positive().nullable().optional(), scheduleId: z.number().int().positive().nullable().optional(), clientRequestId: z.string().uuid().nullable().optional(), tags: z.array(z.string().trim().min(1).max(64)).max(8).optional() })).mutation(async ({ ctx, input }) => {
+  captureRecord: protectedProcedure.input(z.object({ content: z.string().trim().min(1).max(12000), sourceType: z.enum(["capture", "work_log", "journal", "link"]).optional(), projectId: z.number().int().positive().nullable().optional(), stageId: z.number().int().positive().nullable().optional(), taskId: z.number().int().positive().nullable().optional(), scheduleId: z.number().int().positive().nullable().optional(), appendToRecordId: z.number().int().positive().nullable().optional(), clientRequestId: z.string().uuid().nullable().optional(), tags: z.array(z.string().trim().min(1).max(64)).max(8).optional() })).mutation(async ({ ctx, input }) => {
     const db = await databaseOrThrow();
     if (input.clientRequestId) {
       const [existing] = await db.select().from(records).where(and(eq(records.userId, ctx.user.id), eq(records.clientRequestId, input.clientRequestId))).limit(1);
@@ -468,7 +476,21 @@ export const workspaceRouter = router({
     await assertOptionalLinks(ctx.user.id, input);
     const linked = Boolean(input.projectId || input.stageId || input.taskId || input.scheduleId);
     const tags = Array.from(new Set((input.tags ?? []).map(tag => tag.replace(/\s+/g, " "))));
-    const { tags: _tags, ...recordInput } = input;
+    if (input.appendToRecordId) {
+      const [existing] = await db.select().from(records).where(and(eq(records.id, input.appendToRecordId), eq(records.userId, ctx.user.id))).limit(1);
+      await assertOwned(existing, ctx.user.id, "오늘기록");
+      if (existing.sourceType !== "journal") throw new TRPCError({ code: "BAD_REQUEST", message: "오늘기록으로 누적할 수 없는 기록입니다." });
+      const nextContent = `${existing.content}\n\n${input.content}`.trim();
+      await db.update(records).set({ content: nextContent }).where(and(eq(records.id, existing.id), eq(records.userId, ctx.user.id)));
+      if (tags.length) {
+        const currentTags = await db.select({ tag: recordTags.tag }).from(recordTags).where(and(eq(recordTags.userId, ctx.user.id), eq(recordTags.recordId, existing.id)));
+        const missingTags = tags.filter(tag => !currentTags.some(row => row.tag === tag));
+        if (missingTags.length) await db.insert(recordTags).values(missingTags.map(tag => ({ userId: ctx.user.id, recordId: existing.id, tag })));
+      }
+      const [record] = await db.select().from(records).where(and(eq(records.id, existing.id), eq(records.userId, ctx.user.id))).limit(1);
+      return record;
+    }
+    const { tags: _tags, appendToRecordId: _appendToRecordId, ...recordInput } = input;
     try {
       return await inTransaction(db, async transaction => {
         const [created] = await transaction.insert(records).values({ ...recordInput, userId: ctx.user.id, sourceType: input.sourceType ?? "capture", projectId: input.projectId ?? null, stageId: input.stageId ?? null, taskId: input.taskId ?? null, scheduleId: input.scheduleId ?? null, recordKind: linked ? "linked" : "captured" }).$returningId();

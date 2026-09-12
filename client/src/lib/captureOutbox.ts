@@ -8,7 +8,8 @@ export type PendingCaptureFile = {
 export type PendingCapture = {
   id: string;
   content: string;
-  sourceType: "capture" | "link";
+  sourceType: "capture" | "journal" | "link";
+  appendToRecordId?: number | null;
   projectId: number | null;
   stageId: number | null;
   taskId: number | null;

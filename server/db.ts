@@ -10,7 +10,8 @@ import {
   recordTags,
   reviewNotes,
   savedRecordSearches,
-  schedules,
+    schedules,
+    scheduleTags,
   stages,
   tasks,
   users,
@@ -75,7 +76,15 @@ export async function getWorkspaceSnapshot(userId: number, start: Date, end: Dat
   ]);
 
   const activeItems = filterActiveWorkspaceItems(projectRows, stageRows, taskRows);
-  return { ...activeItems, schedules: scheduleRows, recentRecords };
+  const tagsBySchedule = new Map<number, string[]>();
+  let scheduleTagRows: Array<{ scheduleId: number; tag: string }> = [];
+  try {
+    scheduleTagRows = await db.select({ scheduleId: scheduleTags.scheduleId, tag: scheduleTags.tag }).from(scheduleTags).where(eq(scheduleTags.userId, userId));
+  } catch {
+    // 0010 마이그레이션 전에도 일정 화면은 기존 데이터로 동작해야 한다.
+  }
+  scheduleTagRows.forEach(row => tagsBySchedule.set(row.scheduleId, [...(tagsBySchedule.get(row.scheduleId) ?? []), row.tag]));
+  return { ...activeItems, schedules: scheduleRows.map(schedule => ({ ...schedule, tags: tagsBySchedule.get(schedule.id) ?? [] })), recentRecords };
 }
 
 export async function getArchivedWorkspace(userId: number) {
@@ -128,7 +137,29 @@ export async function getRecordSearch(userId: number, input: RecordSearchInput) 
 
   const query = input.query?.trim();
   const conditions = [eq(records.userId, userId)];
-  if (query) conditions.push(like(records.content, `%${query}%`));
+  if (query) {
+    const searchPattern = `%${query}%`;
+    const matchingTagRows = await db.select({ recordId: recordTags.recordId }).from(recordTags)
+      .where(and(eq(recordTags.userId, userId), like(recordTags.tag, searchPattern)));
+    const matchingTagIds = matchingTagRows.map(row => row.recordId);
+    const monthMatch = query.match(/^(?:(\d{4})[-./년\s]*)?(\d{1,2})\s*월?$/i);
+    if (monthMatch) {
+      const year = monthMatch[1] ? Number(monthMatch[1]) : new Date().getFullYear();
+      const month = Number(monthMatch[2]);
+      if (month >= 1 && month <= 12) {
+        conditions.push(gte(records.createdAt, new Date(year, month - 1, 1)));
+        conditions.push(lt(records.createdAt, new Date(year, month, 1)));
+      } else {
+        const textMatches = [like(records.content, searchPattern), like(projects.title, searchPattern), like(stages.title, searchPattern), like(tasks.title, searchPattern)];
+        if (matchingTagIds.length) textMatches.push(inArray(records.id, matchingTagIds));
+        conditions.push(or(...textMatches)!);
+      }
+    } else {
+      const textMatches = [like(records.content, searchPattern), like(projects.title, searchPattern), like(stages.title, searchPattern), like(tasks.title, searchPattern)];
+      if (matchingTagIds.length) textMatches.push(inArray(records.id, matchingTagIds));
+      conditions.push(or(...textMatches)!);
+    }
+  }
   if (input.projectId) conditions.push(or(eq(records.projectId, input.projectId), eq(tasks.projectId, input.projectId))!);
   if (input.taskId) conditions.push(eq(records.taskId, input.taskId));
   if (input.sourceType) conditions.push(eq(records.sourceType, input.sourceType));
@@ -185,6 +216,26 @@ export async function getRecordTagStats(userId: number) {
     .orderBy(desc(lastUsedAt), desc(usageCount), asc(recordTags.tag))
     .limit(12);
   return orderRecordTagUsageStats(stats);
+}
+
+export async function getScheduleTagStats(userId: number, start: Date, end: Date) {
+  const db = await getDb();
+  if (!db) throw new Error("Database connection is unavailable");
+  try {
+    const rows = await db.select({
+      tag: scheduleTags.tag,
+      usageCount: sql<number>`count(*)`,
+      completedCount: sql<number>`sum(case when ${schedules.status} = 'completed' then 1 else 0 end)`,
+    }).from(scheduleTags)
+      .innerJoin(schedules, and(eq(scheduleTags.scheduleId, schedules.id), eq(schedules.userId, userId)))
+      .where(and(eq(scheduleTags.userId, userId), gte(schedules.plannedStartAt, start), lt(schedules.plannedStartAt, end)))
+      .groupBy(scheduleTags.tag)
+      .orderBy(desc(sql`count(*)`), asc(scheduleTags.tag))
+      .limit(20);
+    return rows.map(row => ({ tag: row.tag, usageCount: Number(row.usageCount), completedCount: Number(row.completedCount ?? 0) }));
+  } catch {
+    return [];
+  }
 }
 
 export type SavedRecordSearchInput = {

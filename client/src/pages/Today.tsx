@@ -297,7 +297,7 @@ export default function Today() {
           ]);
           setOpenRecordMode(mode);
         }} aria-expanded={openRecordMode === mode} className="h-11 rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
-          {mode === "daily" ? <><SquarePen className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "기록 닫기" : "기록하기"}</> : <><Plus className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "아이디어 닫기" : "아이디어"}</>}
+          {mode === "daily" ? <><SquarePen className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "오늘기록 닫기" : "오늘기록"}</> : <><Plus className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "아이디어 닫기" : "아이디어"}</>}
         </button>)}
       </div>}
 
