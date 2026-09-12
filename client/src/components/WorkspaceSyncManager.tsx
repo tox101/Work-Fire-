@@ -18,9 +18,13 @@ export function WorkspaceSyncManager() {
         utils.workspace.overview.invalidate(),
         utils.workspace.continue.invalidate(),
         utils.workspace.recordSearch.invalidate(),
+        utils.workspace.recentRecordTags.invalidate(),
+        utils.workspace.recordTagOptions.invalidate(),
+        utils.workspace.recordTagStats.invalidate(),
         utils.workspace.pinnedRecordSummaries.invalidate(),
         utils.workspace.savedRecordSearches.invalidate(),
         utils.workspace.scheduleTagStats.invalidate(),
+        utils.workspace.monthlyReview.invalidate(),
       ]);
       const after = getWorkspaceSignature();
       if (announce && shouldAnnounceWorkspaceSync(before, after)) toast.message("다른 기기의 변경을 반영했습니다.");
@@ -30,6 +34,9 @@ export function WorkspaceSyncManager() {
     const handleOnline = () => { setOnline(true); void refreshWorkspace(true); };
     const handleOffline = () => setOnline(false);
     const handleVisibility = () => { if (document.visibilityState === "visible" && navigator.onLine) void refreshWorkspace(true); };
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible" && navigator.onLine) void refreshWorkspace(false);
+    }, 30000);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     document.addEventListener("visibilitychange", handleVisibility);
@@ -37,8 +44,9 @@ export function WorkspaceSyncManager() {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       document.removeEventListener("visibilitychange", handleVisibility);
+      window.clearInterval(refreshTimer);
     };
-  }, [queryClient, utils.workspace.continue, utils.workspace.overview, utils.workspace.pinnedRecordSummaries, utils.workspace.recordSearch, utils.workspace.savedRecordSearches]);
+  }, [queryClient, utils.workspace.continue, utils.workspace.monthlyReview, utils.workspace.overview, utils.workspace.pinnedRecordSummaries, utils.workspace.recentRecordTags, utils.workspace.recordSearch, utils.workspace.recordTagOptions, utils.workspace.recordTagStats, utils.workspace.savedRecordSearches, utils.workspace.scheduleTagStats]);
 
   return online ? null : <p role="status" aria-live="polite" className="fixed inset-x-3 bottom-20 z-50 mx-auto max-w-md rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-bold text-amber-900 shadow-sm md:bottom-4">오프라인입니다. 저장되지 않은 Capture는 이 기기에 보관됩니다.</p>;
 }

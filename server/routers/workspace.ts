@@ -95,18 +95,14 @@ async function inTransaction<T>(db: any, operation: (transaction: any) => Promis
   return typeof db.transaction === "function" ? db.transaction(operation) : operation(db);
 }
 
-function revisionConflict() {
-  return new TRPCError({ code: "CONFLICT", message: "다른 기기에서 이미 변경됐습니다. 최신 내용을 불러온 뒤 다시 시도하세요." });
-}
-
-async function updateWithRevision(db: any, table: any, id: number, userId: number, currentRevision: number | undefined, expectedRevision: number | undefined, values: Record<string, unknown>) {
-  if (expectedRevision !== undefined && expectedRevision !== currentRevision) throw revisionConflict();
-  const revision = expectedRevision ?? currentRevision;
+async function updateWithRevision(db: any, table: any, id: number, userId: number, currentRevision: number | undefined, _expectedRevision: number | undefined, values: Record<string, unknown>) {
   const conditions = [eq(table.id, id), eq(table.userId, userId)];
-  if (revision !== undefined) conditions.push(eq(table.revision, revision));
-  const result = await db.update(table).set(revision === undefined ? values : { ...values, revision: revision + 1 }).where(and(...conditions));
+  // 여러 기기에서 같은 항목을 수정하면 서버에 나중에 도착한 요청을 최종값으로 사용한다.
+  // 단, revision은 현재 DB 값 기준으로 증가시켜 오래된 클라이언트가 번호를 되돌리지 못하게 한다.
+  const nextRevision = (currentRevision ?? 0) + 1;
+  const result = await db.update(table).set({ ...values, revision: nextRevision }).where(and(...conditions));
   const header = Array.isArray(result) ? result[0] : result;
-  if (header && typeof header.affectedRows === "number" && header.affectedRows === 0) throw revisionConflict();
+  if (header && typeof header.affectedRows === "number" && header.affectedRows === 0) throw new TRPCError({ code: "NOT_FOUND", message: "수정할 항목을 찾을 수 없습니다." });
 }
 
 export const workspaceRouter = router({
