@@ -296,8 +296,8 @@ export default function Today() {
             utils.workspace.recordTagOptions.invalidate(),
           ]);
           setOpenRecordMode(mode);
-        }} aria-expanded={openRecordMode === mode} className={`h-11 rounded-lg text-sm font-extrabold ring-1 ring-slate-200 ${mode === "capture" ? "bg-emerald-700 text-white ring-emerald-700" : "bg-white text-slate-700 hover:bg-slate-50"}`}>
-          {mode === "daily" ? <><SquarePen className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "기록 닫기" : "기록하기"}</> : <><Plus className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "Capture 닫기" : "+ Capture"}</>}
+        }} aria-expanded={openRecordMode === mode} className="h-11 rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
+          {mode === "daily" ? <><SquarePen className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "기록 닫기" : "기록하기"}</> : <><Plus className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "아이디어 닫기" : "아이디어"}</>}
         </button>)}
       </div>}
 
