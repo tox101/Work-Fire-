@@ -76,7 +76,7 @@ export default function Records() {
                     <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-800">{record.sourceType}</span>
                   </span>
                 </div>
-                <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-[15px] font-semibold leading-5 text-slate-900 sm:text-sm">{record.content}</p>
+                <p className="mt-1.5 whitespace-pre-wrap text-[15px] font-semibold leading-5 text-slate-900 sm:text-sm">{record.content}</p>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-200/60">
                   <div className="flex flex-wrap gap-1 text-[11px] font-bold text-slate-600">
                     {hasLinkedData && <>
