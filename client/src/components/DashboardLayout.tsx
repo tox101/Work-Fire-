@@ -91,11 +91,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </Sidebar>
 
       <SidebarInset className="min-h-screen bg-transparent">
-        <header className="sticky top-0 z-30 flex h-12 items-center justify-between border-b border-emerald-100 bg-[#f8fbf7]/95 px-4 backdrop-blur md:hidden">
-          <button onClick={() => setLocation("/")} className="industrial-title text-xl text-violet-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500">일정열정</button>
-          <span className="industrial-label text-violet-400">Today / 01</span>
-        </header>
-        <main className="mx-auto w-full max-w-6xl px-2 py-2 sm:px-4 sm:py-3 pb-20 md:pb-4">{children}</main>
+        <main className="mx-auto w-full max-w-6xl px-2 py-1 sm:px-4 sm:py-3 pb-20 md:pb-4">{children}</main>
         {isMobile && <MobileNavigation location={window.location.pathname} onNavigate={setLocation} onCapture={() => setCaptureOpen(true)} />}
         {captureOpen && <GlobalCaptureSheet onClose={() => setCaptureOpen(false)} />}
       </SidebarInset>

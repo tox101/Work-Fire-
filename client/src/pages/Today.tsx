@@ -64,16 +64,6 @@ function isRestDay(value: Date | string | null) {
   return date.getDay() === 0 || date.getDay() === 6 || KOREA_HOLIDAYS_2026.has(key);
 }
 
-function categoryMeta(item: ScheduleLike) {
-  if (item.scheduleType === "meeting") return { label: "회의", color: "bg-violet-500", text: "text-violet-700" };
-  if (item.scheduleType === "personal") return { label: "일상", color: "bg-stone-400", text: "text-stone-700" };
-  if (item.scheduleType === "review") return { label: "복기", color: "bg-indigo-500", text: "text-indigo-700" };
-  const category = parseScheduleNotes(item.notes).category;
-  if (category === "daily") return { label: "일상", color: "bg-stone-400", text: "text-stone-700" };
-  if (category === "urgent") return { label: "긴급", color: "bg-orange-500", text: "text-orange-700" };
-  return { label: item.taskId ? "작업" : "일정", color: "bg-sky-500", text: "text-sky-700" };
-}
-
 function suggestedCategory(title: string): ScheduleCategory | null {
   const value = title.toLowerCase();
   if (/회의|미팅|통화|면담/.test(value)) return "project";
@@ -100,7 +90,6 @@ export default function Today() {
   const [showSchedule, setShowSchedule] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleLike | null>(null);
   const [initialCategory, setInitialCategory] = useState<ScheduleCategory>("project");
-  const [filter, setFilter] = useState<"all" | "task" | "meeting" | "personal" | "urgent">("all");
   const [viewMode, setViewMode] = useState<"day" | "week">("day");
   const [optimisticStatuses, setOptimisticStatuses] = useState<Record<number, ScheduleLike["status"]>>({});
   const [, setLocation] = useLocation();
@@ -120,11 +109,7 @@ export default function Today() {
   const utils = trpc.useUtils();
   const data = overview.data;
   const allSchedules = (data?.schedules ?? []) as ScheduleLike[];
-  const schedules = useMemo(() => allSchedules.filter(item => {
-    if (filter === "all") return true;
-    if (filter === "urgent") return parseScheduleNotes(item.notes).category === "urgent" || item.scheduleFlags?.includes("urgent");
-    return (item.scheduleType ?? (parseScheduleNotes(item.notes).category === "daily" ? "personal" : "task")) === filter;
-  }), [allSchedules, filter]);
+  const schedules = allSchedules;
   const orderedSchedules = useMemo(() => [...schedules].sort((left, right) => {
     const leftStatus = optimisticStatuses[left.id] ?? left.status;
     const rightStatus = optimisticStatuses[right.id] ?? right.status;
@@ -265,20 +250,16 @@ export default function Today() {
       </div>
 
       <section aria-label={viewMode === "week" ? "7일 일정" : "오늘 일정"} className="rounded-xl bg-white px-3 py-2 shadow-sm ring-1 ring-slate-200/70">
-        <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1" aria-label="일정 종류 필터">
-          {([["all", "전체"], ["task", "작업"], ["meeting", "회의"], ["personal", "일상"], ["urgent", "긴급"]] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} className={`h-8 shrink-0 touch-manipulation rounded-full px-2.5 text-[11px] font-bold ${filter === value ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{label}</button>)}
-        </div>
         {orderedSchedules.length ? orderedSchedules.map((item, index) => {
               const displayStatus = optimisticStatuses[item.id] ?? item.status;
               const done = displayStatus === "completed";
               const active = displayStatus === "in_progress";
-              const meta = categoryMeta(item);
               const dateKey = item.plannedStartAt ? new Date(item.plannedStartAt).toDateString() : "unknown";
               const previousDateKey = index > 0 && orderedSchedules[index - 1].plannedStartAt ? new Date(orderedSchedules[index - 1].plannedStartAt as Date | string).toDateString() : "unknown";
               const showDateHeading = viewMode === "week" && dateKey !== previousDateKey;
               const duration = parseScheduleNotes(item.notes).duration;
               return (
-                <div key={item.id}>{showDateHeading && <div className="border-b border-slate-200 bg-slate-50 px-2 py-2 text-sm font-black text-slate-700">{formatShortDate(item.plannedStartAt)} {item.plannedStartAt ? WEEKDAY_FORMATTER.format(new Date(item.plannedStartAt)) : ""}</div>}<article className={`group flex min-h-[42px] items-center gap-1.5 border-b border-slate-100 py-1.5 last:border-0 sm:gap-2 ${active ? "bg-emerald-50/70" : ""}`}>
+                <div key={item.id}>{showDateHeading && <div className="border-b border-slate-200 bg-slate-50 px-2 py-2 text-sm font-black text-slate-700">{formatShortDate(item.plannedStartAt)} {item.plannedStartAt ? WEEKDAY_FORMATTER.format(new Date(item.plannedStartAt)) : ""}</div>}<article className={`group flex min-h-[30px] items-center gap-1 border-b border-slate-100 py-0 last:border-0 sm:gap-2 ${active ? "bg-emerald-50/70" : ""}`}>
                   <button
                     type="button"
                     role="checkbox"
@@ -286,20 +267,18 @@ export default function Today() {
                     aria-label={`${item.title} ${done ? "다시 진행" : "완료"}`}
                     title={done ? "다시 진행" : "완료 처리"}
                     onClick={() => { const nextStatus = done ? "planned" : "completed"; setOptimisticStatuses(current => ({ ...current, [item.id]: nextStatus })); setScheduleStatus.mutate({ id: item.id, expectedRevision: item.revision, status: nextStatus }); }}
-                    className="flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded p-1"
+                    className="flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded p-0"
                   >
-                    <span className={`flex h-7 w-7 items-center justify-center rounded border-2 transition-colors ${done ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300 bg-white text-transparent hover:border-emerald-500"}`}>
+                    <span className={`flex h-6 w-6 items-center justify-center rounded border-2 transition-colors ${done ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300 bg-white text-transparent hover:border-emerald-500"}`}>
                       <Check className="h-3 w-3" aria-hidden="true" />
                     </span>
                   </button>
-                  <span className={`hidden h-2 w-2 shrink-0 rounded-full sm:block ${meta.color}`} aria-hidden="true" />
                   <span className={`w-[56px] shrink-0 font-mono text-sm font-extrabold sm:w-[72px] sm:text-base ${done ? "text-slate-400" : "text-slate-700"}`}>{formatTime(item.plannedStartAt)}</span>
                   <div className="min-w-0 flex-1">
                     <p className={`truncate text-base font-black leading-tight ${done ? "text-slate-400" : "text-slate-950"}`}>{item.title}</p>
                     {active && <p className="text-[10px] font-bold text-emerald-700">진행 중 · {formatMinutesToHuman(duration)}</p>}
                     {!active && item.tags?.length ? <p className="hidden truncate text-[11px] font-semibold text-slate-400 sm:block">#{item.tags.slice(0, 2).join(" #")}</p> : null}
                   </div>
-                  <span className={`hidden shrink-0 text-[11px] font-bold sm:inline ${meta.text}`}>{meta.label}</span>
                   <button type="button" onClick={() => openEditSchedule(item)} aria-label={`${item.title} 수정`} className="flex h-9 w-9 shrink-0 touch-manipulation items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-800"><Pencil className="h-3.5 w-3.5" /></button>
                 </article></div>
               );
