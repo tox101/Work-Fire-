@@ -54,6 +54,7 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
   const [pendingCaptures, setPendingCaptures] = useState<PendingCapture[]>([]);
   const [syncingCaptureId, setSyncingCaptureId] = useState<string | null>(null);
   const [dailyRecordId, setDailyRecordId] = useState<number | null>(null);
+  const [todayKey, setTodayKey] = useState(() => new Date().toDateString());
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
   const fileInput = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
@@ -61,8 +62,8 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
   const upload = trpc.workspace.uploadAttachment.useMutation();
   const recentTags = trpc.workspace.recentRecordTags.useQuery();
   const tagOptions = trpc.workspace.recordTagOptions.useQuery();
-  const todayRange = useMemo(() => { const start = new Date(); start.setHours(0, 0, 0, 0); const end = new Date(start); end.setDate(end.getDate() + 1); return { start, end }; }, []);
-  const todayJournal = trpc.workspace.recordSearch.useQuery({ query: undefined, projectId: null, taskId: null, sourceType: "journal", start: todayRange.start, end: todayRange.end, sort: "oldest", tag: null }, { enabled: mode === "daily" });
+  const todayRange = useMemo(() => { const start = new Date(todayKey); start.setHours(0, 0, 0, 0); const end = new Date(start); end.setDate(end.getDate() + 1); return { start, end }; }, [todayKey]);
+  const todayJournal = trpc.workspace.recordSearch.useQuery({ query: undefined, projectId: null, taskId: null, sourceType: null, start: todayRange.start, end: todayRange.end, sort: "oldest", tag: null }, { enabled: mode === "daily" });
   const recentTagMerges = trpc.workspace.recentTagMergeOperations.useQuery();
   const mergeTag = trpc.workspace.mergeRecordTag.useMutation({
     onSuccess: (_result, variables) => {
@@ -82,7 +83,8 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
     onError: error => toast.error(error.message),
   });
   const selectedTask = useMemo(() => workspace?.tasks.find(task => String(task.id) === taskId), [workspace?.tasks, taskId]);
-  useEffect(() => { if (mode === "daily" && dailyRecordId === null) setDailyRecordId(todayJournal.data?.[0]?.id ?? null); }, [dailyRecordId, mode, todayJournal.data]);
+  useEffect(() => { const timer = window.setInterval(() => setTodayKey(current => { const next = new Date().toDateString(); return current === next ? current : next; }), 30000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => { if (mode === "daily") setDailyRecordId(todayJournal.data?.find(record => record.sourceType === "journal" || record.content.includes("[오늘 마감]"))?.id ?? null); }, [mode, todayJournal.data, todayKey]);
   const content = [issueContent.trim(), deadlineContent.trim() ? `[오늘 마감]\n${deadlineContent.trim()}` : ""].filter(Boolean).join("\n\n");
   const hasDraft = Boolean(content || tags.length || projectId || taskId);
   const refreshPendingCaptures = useCallback(async () => {
