@@ -259,7 +259,7 @@ export default function Today() {
               const showDateHeading = viewMode === "week" && dateKey !== previousDateKey;
               const duration = parseScheduleNotes(item.notes).duration;
               return (
-                <div key={item.id}>{showDateHeading && <div className="border-b border-slate-200 bg-slate-50 px-2 py-2 text-sm font-black text-slate-700">{formatShortDate(item.plannedStartAt)} {item.plannedStartAt ? WEEKDAY_FORMATTER.format(new Date(item.plannedStartAt)) : ""}</div>}<article className={`group flex min-h-[30px] items-center gap-1 border-b border-slate-100 py-0 last:border-0 sm:gap-2 ${active ? "bg-emerald-50/70" : ""}`}>
+                <div key={item.id}>{showDateHeading && <div className={`border-b border-slate-200 bg-slate-50 px-2 py-2 text-sm font-black ${isRestDay(item.plannedStartAt) ? "text-red-600" : "text-slate-700"}`}>{formatShortDate(item.plannedStartAt)} {item.plannedStartAt ? WEEKDAY_FORMATTER.format(new Date(item.plannedStartAt)) : ""}</div>}<article className={`group flex min-h-[30px] items-center gap-1 border-b border-slate-100 py-0 last:border-0 sm:gap-2 ${active ? "bg-emerald-50/70" : ""}`}>
                   <button
                     type="button"
                     role="checkbox"
@@ -275,7 +275,7 @@ export default function Today() {
                   </button>
                   <span className={`w-[56px] shrink-0 font-mono text-sm font-extrabold sm:w-[72px] sm:text-base ${done ? "text-slate-400" : "text-slate-700"}`}>{formatTime(item.plannedStartAt)}</span>
                   <div className="min-w-0 flex-1">
-                    <p className={`truncate text-base font-black leading-tight ${done ? "text-slate-400" : "text-slate-950"}`}>{item.title}</p>
+                    <p className={`truncate text-base font-black leading-tight ${done ? "text-slate-400" : "text-slate-950"}`}>{item.title} <span className="ml-1 font-mono text-sm font-bold text-slate-400">{formatTime(item.plannedEndAt)}</span></p>
                     {active && <p className="text-[10px] font-bold text-emerald-700">진행 중 · {formatMinutesToHuman(duration)}</p>}
                     {!active && item.tags?.length ? <p className="hidden truncate text-[11px] font-semibold text-slate-400 sm:block">#{item.tags.slice(0, 2).join(" #")}</p> : null}
                   </div>
