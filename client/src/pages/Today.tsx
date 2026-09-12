@@ -286,7 +286,17 @@ export default function Today() {
       </section>
 
       {viewMode === "day" && <div className="mt-3">
-        <button type="button" onClick={() => setShowCapture(current => !current)} aria-expanded={showCapture} className="h-11 w-full rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><SquarePen className="mr-1 inline h-4 w-4" />{showCapture ? "기록 닫기" : "기록하기"}</button>
+        <button type="button" onClick={async () => {
+          if (showCapture) { setShowCapture(false); return; }
+          await Promise.all([
+            utils.workspace.overview.invalidate(),
+            utils.workspace.continue.invalidate(),
+            utils.workspace.recordSearch.invalidate(),
+            utils.workspace.recentRecordTags.invalidate(),
+            utils.workspace.recordTagOptions.invalidate(),
+          ]);
+          setShowCapture(true);
+        }} aria-expanded={showCapture} className="h-11 w-full rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><SquarePen className="mr-1 inline h-4 w-4" />{showCapture ? "기록 닫기" : "기록하기"}</button>
       </div>}
 
       {viewMode === "day" && showCapture && <section className="mt-3"><CapturePanel workspace={data} onComplete={() => setShowCapture(false)} /></section>}
