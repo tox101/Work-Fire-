@@ -13,15 +13,15 @@ type WorkspaceData = {
 const CAPTURE_DRAFT_KEY = "personal-work-os:capture-draft:v1";
 type CaptureDraft = { content: string; issueContent?: string; deadlineContent?: string; tags: string[]; projectId: string; taskId: string };
 
-function captureDraftKey(date = new Date()) {
+function captureDraftKey(date = new Date(), mode: "daily" | "capture" = "daily") {
   const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  return `${CAPTURE_DRAFT_KEY}:${dateKey}`;
+  return `${CAPTURE_DRAFT_KEY}:${mode}:${dateKey}`;
 }
 
-function readCaptureDraft(): CaptureDraft {
+function readCaptureDraft(mode: "daily" | "capture") {
   if (typeof window === "undefined") return { content: "", tags: [], projectId: "", taskId: "" };
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(captureDraftKey()) ?? "null");
+    const parsed = JSON.parse(window.localStorage.getItem(captureDraftKey(new Date(), mode)) ?? "null");
     if (!parsed || typeof parsed.content !== "string" || !Array.isArray(parsed.tags)) return { content: "", tags: [], projectId: "", taskId: "" };
     return { content: parsed.content, issueContent: typeof parsed.issueContent === "string" ? parsed.issueContent : parsed.content, deadlineContent: typeof parsed.deadlineContent === "string" ? parsed.deadlineContent : "", tags: parsed.tags.filter((tag: unknown) => typeof tag === "string").slice(0, 8), projectId: typeof parsed.projectId === "string" ? parsed.projectId : "", taskId: typeof parsed.taskId === "string" ? parsed.taskId : "" };
   } catch { return { content: "", tags: [], projectId: "", taskId: "" }; }
@@ -40,8 +40,8 @@ function createRequestId() {
   return window.crypto.randomUUID();
 }
 
-export function CapturePanel({ workspace, onComplete, compact = false }: { workspace?: WorkspaceData; onComplete?: () => void; compact?: boolean }) {
-  const [draft] = useState(readCaptureDraft);
+export function CapturePanel({ workspace, onComplete, compact = false, mode = "capture" }: { workspace?: WorkspaceData; onComplete?: () => void; compact?: boolean; mode?: "daily" | "capture" }) {
+  const [draft] = useState(() => readCaptureDraft(mode));
   const [issueContent, setIssueContent] = useState(draft.issueContent ?? draft.content);
   const [deadlineContent, setDeadlineContent] = useState(draft.deadlineContent ?? "");
   const [taskId, setTaskId] = useState<string>(draft.taskId);
@@ -113,10 +113,10 @@ export function CapturePanel({ workspace, onComplete, compact = false }: { works
   }, [refreshPendingCaptures, syncPendingCapture]);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (hasDraft) window.localStorage.setItem(captureDraftKey(), JSON.stringify({ content, issueContent, deadlineContent, tags, projectId, taskId }));
-    else window.localStorage.removeItem(captureDraftKey());
-  }, [content, deadlineContent, hasDraft, issueContent, projectId, tags, taskId]);
-  const clearDraft = () => { setIssueContent(""); setDeadlineContent(""); setTaskId(""); setProjectId(""); setTags([]); setTagDraft(""); setFiles([]); if (typeof window !== "undefined") window.localStorage.removeItem(captureDraftKey()); };
+    if (hasDraft) window.localStorage.setItem(captureDraftKey(new Date(), mode), JSON.stringify({ content, issueContent, deadlineContent, tags, projectId, taskId }));
+    else window.localStorage.removeItem(captureDraftKey(new Date(), mode));
+  }, [content, deadlineContent, hasDraft, issueContent, mode, projectId, tags, taskId]);
+  const clearDraft = () => { setIssueContent(""); setDeadlineContent(""); setTaskId(""); setProjectId(""); setTags([]); setTagDraft(""); setFiles([]); if (typeof window !== "undefined") window.localStorage.removeItem(captureDraftKey(new Date(), mode)); };
   const addTag = (value: string) => {
     const tag = value.trim().replace(/\s+/g, " ");
     if (!tag || tags.includes(tag) || tags.length >= 8) return;
@@ -133,7 +133,7 @@ export function CapturePanel({ workspace, onComplete, compact = false }: { works
       const pending: PendingCapture = {
         id: createRequestId(),
         content: content.trim(),
-        sourceType: /^https?:\/\//.test(content.trim()) ? "link" : "capture",
+        sourceType: mode === "daily" ? "journal" : (/^https?:\/\//.test(content.trim()) ? "link" : "capture"),
         taskId: selectedTask?.id ?? null,
         projectId: selectedTask?.projectId ?? (projectId ? Number(projectId) : null),
         stageId: selectedTask?.stageId ?? null,
@@ -157,10 +157,10 @@ export function CapturePanel({ workspace, onComplete, compact = false }: { works
         <div>
         </div>
       </div>
-      <div className="mt-3 grid min-h-[450px] grid-rows-[2fr_1fr] gap-2">
-        <textarea autoFocus value={issueContent} onChange={event => setIssueContent(event.target.value)} className="mono-input min-h-0 resize-none text-base leading-7" placeholder="A. 기록 이슈" aria-label="기록 이슈" />
-        <textarea value={deadlineContent} onChange={event => setDeadlineContent(event.target.value)} className="mono-input min-h-0 resize-none text-base leading-7" placeholder="B. 오늘 마감" aria-label="오늘 마감" />
-      </div>
+      {mode === "daily" ? <div className="mt-3 grid min-h-[450px] grid-rows-[2fr_1fr] gap-2">
+        <textarea autoFocus value={issueContent} onChange={event => setIssueContent(event.target.value)} className="mono-input min-h-0 resize-none text-base leading-7" placeholder="오늘 관련 이슈와 진행 내용" aria-label="오늘 관련 이슈" />
+        <textarea value={deadlineContent} onChange={event => setDeadlineContent(event.target.value)} className="mono-input min-h-0 resize-none text-base leading-7" placeholder="오늘 마무리할 내용" aria-label="오늘 마무리" />
+      </div> : <textarea autoFocus value={issueContent} onChange={event => setIssueContent(event.target.value)} className="mono-input mt-3 min-h-[260px] resize-y text-base leading-7" placeholder="순간 아이디어를 적어두세요. 나중에 Project나 Task에 연결할 수 있습니다." aria-label="순간 아이디어" />}
       {!isOnline ? <p role="status" className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">오프라인입니다. 기록은 이 기기에 보관하고 연결되면 전송합니다.</p> : null}
       {false && pendingCaptures.length ? <section aria-label="Capture 전송 대기함" className="mt-2 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2"><div className="flex items-center justify-between gap-2"><p className="text-xs font-bold text-sky-800">전송 대기 기록 {pendingCaptures.length}개</p><button type="button" onClick={() => void Promise.all(pendingCaptures.map(item => syncPendingCapture(item)))} disabled={!isOnline || syncingCaptureId !== null} className="pressable text-xs font-bold text-sky-800 underline underline-offset-2 disabled:opacity-50">다시 전송</button></div><ul className="mt-2 space-y-1">{pendingCaptures.map(item => <li key={item.id} className="flex items-center justify-between gap-2 text-[11px] text-sky-700"><span className="min-w-0 truncate">첨부 {item.files.length}개 · {item.lastError ? "재시도 필요" : "전송 대기"}</span><button type="button" onClick={() => void syncPendingCapture(item)} disabled={!isOnline || syncingCaptureId !== null} aria-label="대기 중인 Capture 다시 전송" className="pressable shrink-0 font-bold underline underline-offset-2 disabled:opacity-50">{syncingCaptureId === item.id ? "전송 중" : "전송"}</button></li>)}</ul></section> : null}
       {false && hasDraft ? <div aria-label="Capture 임시저장" className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2"><p className="text-xs font-bold text-emerald-700">이 기기에서 임시저장 중</p><button type="button" onClick={clearDraft} aria-label="Capture 임시저장 비우기" className="pressable text-xs font-bold text-emerald-700 underline underline-offset-2 hover:text-emerald-900">임시저장 비우기</button></div> : null}

@@ -86,7 +86,7 @@ export default function Today() {
     value.setHours(0, 0, 0, 0);
     return value;
   });
-  const [showCapture, setShowCapture] = useState(false);
+  const [openRecordMode, setOpenRecordMode] = useState<"daily" | "capture" | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<ScheduleLike | null>(null);
   const [initialCategory, setInitialCategory] = useState<ScheduleCategory>("project");
@@ -285,9 +285,9 @@ export default function Today() {
             }) : <EmptySchedule onAdd={() => openNewSchedule()} />}
       </section>
 
-      {viewMode === "day" && <div className="mt-3">
-        <button type="button" onClick={async () => {
-          if (showCapture) { setShowCapture(false); return; }
+      {viewMode === "day" && <div className="mt-3 grid grid-cols-2 gap-2">
+        {(["daily", "capture"] as const).map(mode => <button key={mode} type="button" onClick={async () => {
+          if (openRecordMode === mode) { setOpenRecordMode(null); return; }
           await Promise.all([
             utils.workspace.overview.invalidate(),
             utils.workspace.continue.invalidate(),
@@ -295,11 +295,13 @@ export default function Today() {
             utils.workspace.recentRecordTags.invalidate(),
             utils.workspace.recordTagOptions.invalidate(),
           ]);
-          setShowCapture(true);
-        }} aria-expanded={showCapture} className="h-11 w-full rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><SquarePen className="mr-1 inline h-4 w-4" />{showCapture ? "기록 닫기" : "기록하기"}</button>
+          setOpenRecordMode(mode);
+        }} aria-expanded={openRecordMode === mode} className={`h-11 rounded-lg text-sm font-extrabold ring-1 ring-slate-200 ${mode === "capture" ? "bg-emerald-700 text-white ring-emerald-700" : "bg-white text-slate-700 hover:bg-slate-50"}`}>
+          {mode === "daily" ? <><SquarePen className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "기록 닫기" : "기록하기"}</> : <><Plus className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "Capture 닫기" : "+ Capture"}</>}
+        </button>)}
       </div>}
 
-      {viewMode === "day" && showCapture && <section className="mt-3"><CapturePanel workspace={data} onComplete={() => setShowCapture(false)} /></section>}
+      {viewMode === "day" && openRecordMode && <section className="mt-3"><CapturePanel mode={openRecordMode} workspace={data} onComplete={() => setOpenRecordMode(null)} /></section>}
 
       {showSchedule && <SmartScheduleComposer tasks={(data?.tasks ?? []) as Array<{ id: number; title: string }>} initialCategory={initialCategory} baseDate={day} schedule={editingSchedule} onCancel={() => { setShowSchedule(false); setEditingSchedule(null); }} onDelete={editingSchedule ? () => { if (window.confirm(`“${editingSchedule.title}” 일정을 삭제할까요?`)) deleteSchedule.mutate({ id: editingSchedule.id }); } : undefined} onCarryOver={editingSchedule ? () => { const start = editingSchedule.plannedStartAt ? new Date(editingSchedule.plannedStartAt) : new Date(day); const end = editingSchedule.plannedEndAt ? new Date(editingSchedule.plannedEndAt) : null; start.setDate(start.getDate() + 1); if (end) end.setDate(end.getDate() + 1); updateSchedule.mutate({ id: editingSchedule.id, expectedRevision: editingSchedule.revision, plannedStartAt: start, plannedEndAt: end, notes: editingSchedule.notes }); } : undefined} onSubmit={values => { if (editingSchedule) updateSchedule.mutate({ id: editingSchedule.id, expectedRevision: editingSchedule.revision, title: values.title, taskId: values.taskId, scheduleType: values.scheduleType, scheduleFlags: values.scheduleFlags, tags: values.tags, plannedStartAt: values.plannedStartAt, plannedEndAt: values.plannedEndAt, notes: values.notes }); else createSchedule.mutate(values); }} busy={createSchedule.isPending || updateSchedule.isPending || deleteSchedule.isPending} />}
     </div>

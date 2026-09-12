@@ -1,10 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
-import { CapturePanel } from "@/components/CapturePanel";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { trpc } from "@/lib/trpc";
-import { Archive, BookOpen, CalendarDays, FolderKanban, LogOut, Plus, Search, SquareStack } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BookOpen, CalendarDays, FolderKanban, LogOut, Search, SquareStack } from "lucide-react";
 import { useLocation } from "wouter";
 import { Button } from "./ui/button";
 import {
@@ -25,14 +22,12 @@ const navigation = [
   { label: "Records", path: "/records", icon: Search },
   { label: "Review", path: "/review", icon: SquareStack },
   { label: "Guide", path: "/guide", icon: BookOpen },
-  { label: "Capture", path: "/capture", icon: Plus },
 ] as const;
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { loading, user, logout } = useAuth();
   const [, setLocation] = useLocation();
   const isMobile = useIsMobile();
-  const [captureOpen, setCaptureOpen] = useState(false);
 
   if (loading) {
     return <div className="min-h-screen bg-[#f6f6f6] p-6"><div className="h-24 w-64 animate-pulse bg-neutral-300" /></div>;
@@ -69,7 +64,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <SidebarMenuItem key={item.path}>
                   <SidebarMenuButton
                     isActive={active}
-                    onClick={() => item.path === "/capture" ? setCaptureOpen(true) : setLocation(item.path)}
+                    onClick={() => setLocation(item.path)}
                     className="h-10 rounded-lg px-3 text-sm font-bold text-violet-600 hover:bg-white hover:text-violet-950 data-[active=true]:bg-violet-500 data-[active=true]:text-white"
                   >
                     <Icon className="h-4 w-4" />
@@ -92,8 +87,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <SidebarInset className="min-h-screen bg-transparent">
         <main className="mx-auto w-full max-w-6xl px-2 py-1 sm:px-4 sm:py-3 pb-20 md:pb-4">{children}</main>
-        {isMobile && <MobileNavigation location={window.location.pathname} onNavigate={setLocation} onCapture={() => setCaptureOpen(true)} />}
-        {captureOpen && <GlobalCaptureSheet onClose={() => setCaptureOpen(false)} />}
+        {isMobile && <MobileNavigation location={window.location.pathname} onNavigate={setLocation} />}
       </SidebarInset>
     </SidebarProvider>
   );
@@ -103,53 +97,26 @@ function locationMatches(path: string, location: string) {
   return path === "/" ? location === "/" : location.startsWith(path);
 }
 
-function MobileNavigation({ location, onNavigate, onCapture }: { location: string; onNavigate: (to: string) => void; onCapture: () => void }) {
+function MobileNavigation({ location, onNavigate }: { location: string; onNavigate: (to: string) => void }) {
   return (
     <nav aria-label="모바일 주요 메뉴" className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-5 border-t border-emerald-100 bg-white/95 text-slate-900 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] backdrop-blur md:hidden">
-      {navigation.filter(item => item.path !== "/capture").map(item => {
+      {navigation.map(item => {
         const active = locationMatches(item.path, location);
         const Icon = item.icon;
-        const primary = item.path === "/capture";
         const labelMap: Record<string, string> = {
           Today: "Today",
           Projects: "프로젝트",
           Records: "기록",
           Review: "회고",
           Guide: "설명서",
-          Capture: "작성",
         };
         return (
-          <button key={item.path} onClick={() => primary ? onCapture() : onNavigate(item.path)} className={`flex flex-col items-center justify-center gap-1 text-[11px] font-bold transition-colors ${active && !primary ? "text-emerald-700 font-extrabold" : "text-slate-500 hover:text-slate-900"} ${primary ? "border-x border-slate-100" : ""}`}>
-            {primary ? <span className="grid h-8 w-8 place-items-center rounded-full bg-emerald-600 text-white shadow"><Plus className="h-4 w-4" /></span> : <Icon className="h-4 w-4" />}
+          <button key={item.path} onClick={() => onNavigate(item.path)} className={`flex flex-col items-center justify-center gap-1 text-[11px] font-bold transition-colors ${active ? "text-emerald-700 font-extrabold" : "text-slate-500 hover:text-slate-900"}`}>
+            <Icon className="h-4 w-4" />
             <span>{labelMap[item.label] ?? item.label}</span>
           </button>
         );
       })}
     </nav>
-  );
-}
-
-function GlobalCaptureSheet({ onClose }: { onClose: () => void }) {
-  const [day] = useState(() => {
-    const start = new Date(); start.setHours(0, 0, 0, 0);
-    const end = new Date(start); end.setDate(end.getDate() + 1);
-    return { start, end };
-  });
-  const workspace = trpc.workspace.overview.useQuery(day);
-
-  useEffect(() => {
-    const handleEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 bg-violet-950/20 p-3 sm:p-6" role="presentation">
-      <button onClick={onClose} className="absolute inset-0 cursor-default" aria-label="기록 시트 닫기" />
-      <section role="dialog" aria-modal="true" aria-labelledby="global-capture-heading" className="relative mx-auto mt-[5vh] w-full max-w-xl outline-none">
-        <div className="flex items-center justify-between rounded-t-xl bg-violet-500 px-4 py-2.5 text-white"><p id="global-capture-heading" className="industrial-label">Quick Capture</p><button onClick={onClose} className="text-xs font-bold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">닫기 / Esc</button></div>
-        {workspace.isLoading ? <div className="h-64 animate-pulse bg-neutral-200" /> : <CapturePanel workspace={workspace.data} onComplete={onClose} />}
-      </section>
-    </div>
   );
 }
