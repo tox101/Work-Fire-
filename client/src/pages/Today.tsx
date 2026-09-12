@@ -275,7 +275,7 @@ export default function Today() {
                   </button>
                   <span className={`w-[56px] shrink-0 font-mono text-sm font-extrabold sm:w-[72px] sm:text-base ${done ? "text-slate-400" : "text-slate-700"}`}>{formatTime(item.plannedStartAt)}</span>
                   <div className="min-w-0 flex-1">
-                    <p className={`truncate text-base font-black leading-tight ${done ? "text-slate-400" : "text-slate-950"}`}>{item.title} <span className="ml-1 font-mono text-sm font-bold text-slate-400">{formatTime(item.plannedEndAt)}</span></p>
+                    <p className={`flex min-w-0 items-baseline gap-2 text-base font-black leading-tight ${done ? "text-slate-400" : "text-slate-950"}`}><span className="min-w-0 truncate">{item.title} <span className="whitespace-nowrap font-mono text-sm font-bold text-slate-400">({formatTime(item.plannedEndAt)})</span></span></p>
                     {active && <p className="text-[10px] font-bold text-emerald-700">진행 중 · {formatMinutesToHuman(duration)}</p>}
                     {!active && item.tags?.length ? <p className="hidden truncate text-[11px] font-semibold text-slate-400 sm:block">#{item.tags.slice(0, 2).join(" #")}</p> : null}
                   </div>
@@ -285,9 +285,8 @@ export default function Today() {
             }) : <EmptySchedule onAdd={() => openNewSchedule()} />}
       </section>
 
-      <div className="mt-3 flex gap-2">
-        <button type="button" onClick={() => setShowCapture(true)} className="h-11 flex-1 rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><SquarePen className="mr-1 inline h-4 w-4" />기록</button>
-        <button type="button" onClick={() => setLocation("/review")} className="h-11 flex-1 rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><CalendarDays className="mr-1 inline h-4 w-4" />하루 복기</button>
+      <div className="mt-3">
+        <button type="button" onClick={() => setShowCapture(true)} className="h-11 w-full rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><SquarePen className="mr-1 inline h-4 w-4" />기록하기</button>
       </div>
 
       {showCapture && <section className="mt-3"><CapturePanel workspace={data} onComplete={() => setShowCapture(false)} /></section>}
