@@ -9,6 +9,7 @@ export type PendingCapture = {
   id: string;
   content: string;
   sourceType: "capture" | "journal" | "link";
+  dailyDate?: string | null;
   appendToRecordId?: number | null;
   projectId: number | null;
   stageId: number | null;

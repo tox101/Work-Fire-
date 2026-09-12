@@ -95,7 +95,7 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
     if (typeof navigator !== "undefined" && !navigator.onLine) { setIsOnline(false); return false; }
     setSyncingCaptureId(pending.id);
     try {
-      const record = await capture.mutateAsync({ content: pending.content, sourceType: pending.sourceType, projectId: pending.projectId, stageId: pending.stageId, taskId: pending.taskId, appendToRecordId: pending.appendToRecordId ?? null, clientRequestId: pending.id, tags: pending.tags });
+      const record = await capture.mutateAsync({ content: pending.content, sourceType: pending.sourceType, dailyDate: pending.dailyDate ?? null, projectId: pending.projectId, stageId: pending.stageId, taskId: pending.taskId, appendToRecordId: pending.appendToRecordId ?? null, clientRequestId: pending.id, tags: pending.tags });
       if (mode === "daily") setDailyRecordId(record.id);
       for (const file of pending.files) await upload.mutateAsync({ recordId: record.id, fileName: file.fileName, mimeType: file.mimeType, clientUploadId: file.clientUploadId, base64Data: await fileToBase64(file.blob) });
       await removePendingCapture(pending.id);
@@ -145,6 +145,7 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
         id: createRequestId(),
         content: content.trim(),
         sourceType: mode === "daily" ? "journal" : (/^https?:\/\//.test(content.trim()) ? "link" : "capture"),
+        dailyDate: mode === "daily" ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}` : null,
         appendToRecordId: mode === "daily" ? dailyRecordId : null,
         taskId: selectedTask?.id ?? null,
         projectId: selectedTask?.projectId ?? (projectId ? Number(projectId) : null),

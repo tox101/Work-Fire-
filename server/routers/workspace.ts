@@ -467,7 +467,7 @@ export const workspaceRouter = router({
     return { success: true };
   }),
 
-  captureRecord: protectedProcedure.input(z.object({ content: z.string().trim().min(1).max(12000), sourceType: z.enum(["capture", "work_log", "journal", "link"]).optional(), projectId: z.number().int().positive().nullable().optional(), stageId: z.number().int().positive().nullable().optional(), taskId: z.number().int().positive().nullable().optional(), scheduleId: z.number().int().positive().nullable().optional(), appendToRecordId: z.number().int().positive().nullable().optional(), clientRequestId: z.string().uuid().nullable().optional(), tags: z.array(z.string().trim().min(1).max(64)).max(8).optional() })).mutation(async ({ ctx, input }) => {
+  captureRecord: protectedProcedure.input(z.object({ content: z.string().trim().min(1).max(12000), sourceType: z.enum(["capture", "work_log", "journal", "link"]).optional(), dailyDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), projectId: z.number().int().positive().nullable().optional(), stageId: z.number().int().positive().nullable().optional(), taskId: z.number().int().positive().nullable().optional(), scheduleId: z.number().int().positive().nullable().optional(), appendToRecordId: z.number().int().positive().nullable().optional(), clientRequestId: z.string().uuid().nullable().optional(), tags: z.array(z.string().trim().min(1).max(64)).max(8).optional() })).mutation(async ({ ctx, input }) => {
     const db = await databaseOrThrow();
     if (input.clientRequestId) {
       const [existing] = await db.select().from(records).where(and(eq(records.userId, ctx.user.id), eq(records.clientRequestId, input.clientRequestId))).limit(1);
@@ -476,6 +476,13 @@ export const workspaceRouter = router({
     await assertOptionalLinks(ctx.user.id, input);
     const linked = Boolean(input.projectId || input.stageId || input.taskId || input.scheduleId);
     const tags = Array.from(new Set((input.tags ?? []).map(tag => tag.replace(/\s+/g, " "))));
+    if (input.sourceType === "journal" && !input.appendToRecordId) {
+      const start = input.dailyDate ? new Date(`${input.dailyDate}T00:00:00`) : new Date();
+      if (!input.dailyDate) start.setHours(0, 0, 0, 0);
+      const end = new Date(start); end.setDate(end.getDate() + 1);
+      const [sameDayJournal] = await db.select().from(records).where(and(eq(records.userId, ctx.user.id), eq(records.sourceType, "journal"), gte(records.createdAt, start), lt(records.createdAt, end))).orderBy(desc(records.createdAt)).limit(1);
+      if (sameDayJournal) input = { ...input, appendToRecordId: sameDayJournal.id };
+    }
     if (input.appendToRecordId) {
       const [existing] = await db.select().from(records).where(and(eq(records.id, input.appendToRecordId), eq(records.userId, ctx.user.id))).limit(1);
       await assertOwned(existing, ctx.user.id, "오늘기록");
@@ -490,7 +497,7 @@ export const workspaceRouter = router({
       const [record] = await db.select().from(records).where(and(eq(records.id, existing.id), eq(records.userId, ctx.user.id))).limit(1);
       return record;
     }
-    const { tags: _tags, appendToRecordId: _appendToRecordId, ...recordInput } = input;
+    const { tags: _tags, dailyDate: _dailyDate, appendToRecordId: _appendToRecordId, ...recordInput } = input;
     try {
       return await inTransaction(db, async transaction => {
         const [created] = await transaction.insert(records).values({ ...recordInput, userId: ctx.user.id, sourceType: input.sourceType ?? "capture", projectId: input.projectId ?? null, stageId: input.stageId ?? null, taskId: input.taskId ?? null, scheduleId: input.scheduleId ?? null, recordKind: linked ? "linked" : "captured" }).$returningId();
