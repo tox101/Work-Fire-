@@ -105,8 +105,8 @@ function locationMatches(path: string, location: string) {
 
 function MobileNavigation({ location, onNavigate, onCapture }: { location: string; onNavigate: (to: string) => void; onCapture: () => void }) {
   return (
-    <nav aria-label="모바일 주요 메뉴" className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-6 border-t border-emerald-100 bg-white/95 text-slate-900 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] backdrop-blur md:hidden">
-      {navigation.map(item => {
+    <nav aria-label="모바일 주요 메뉴" className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-5 border-t border-emerald-100 bg-white/95 text-slate-900 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] backdrop-blur md:hidden">
+      {navigation.filter(item => item.path !== "/capture").map(item => {
         const active = locationMatches(item.path, location);
         const Icon = item.icon;
         const primary = item.path === "/capture";

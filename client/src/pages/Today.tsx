@@ -285,11 +285,11 @@ export default function Today() {
             }) : <EmptySchedule onAdd={() => openNewSchedule()} />}
       </section>
 
-      <div className="mt-3">
-        <button type="button" onClick={() => setShowCapture(true)} className="h-11 w-full rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><SquarePen className="mr-1 inline h-4 w-4" />기록하기</button>
-      </div>
+      {viewMode === "day" && <div className="mt-3">
+        <button type="button" onClick={() => setShowCapture(current => !current)} aria-expanded={showCapture} className="h-11 w-full rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"><SquarePen className="mr-1 inline h-4 w-4" />{showCapture ? "기록 닫기" : "기록하기"}</button>
+      </div>}
 
-      {showCapture && <section className="mt-3"><CapturePanel workspace={data} onComplete={() => setShowCapture(false)} /></section>}
+      {viewMode === "day" && showCapture && <section className="mt-3"><CapturePanel workspace={data} onComplete={() => setShowCapture(false)} /></section>}
 
       {showSchedule && <SmartScheduleComposer tasks={(data?.tasks ?? []) as Array<{ id: number; title: string }>} initialCategory={initialCategory} baseDate={day} schedule={editingSchedule} onCancel={() => { setShowSchedule(false); setEditingSchedule(null); }} onDelete={editingSchedule ? () => { if (window.confirm(`“${editingSchedule.title}” 일정을 삭제할까요?`)) deleteSchedule.mutate({ id: editingSchedule.id }); } : undefined} onCarryOver={editingSchedule ? () => { const start = editingSchedule.plannedStartAt ? new Date(editingSchedule.plannedStartAt) : new Date(day); const end = editingSchedule.plannedEndAt ? new Date(editingSchedule.plannedEndAt) : null; start.setDate(start.getDate() + 1); if (end) end.setDate(end.getDate() + 1); updateSchedule.mutate({ id: editingSchedule.id, expectedRevision: editingSchedule.revision, plannedStartAt: start, plannedEndAt: end, notes: editingSchedule.notes }); } : undefined} onSubmit={values => { if (editingSchedule) updateSchedule.mutate({ id: editingSchedule.id, expectedRevision: editingSchedule.revision, title: values.title, taskId: values.taskId, scheduleType: values.scheduleType, scheduleFlags: values.scheduleFlags, tags: values.tags, plannedStartAt: values.plannedStartAt, plannedEndAt: values.plannedEndAt, notes: values.notes }); else createSchedule.mutate(values); }} busy={createSchedule.isPending || updateSchedule.isPending || deleteSchedule.isPending} />}
     </div>

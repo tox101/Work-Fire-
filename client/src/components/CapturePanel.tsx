@@ -155,7 +155,6 @@ export function CapturePanel({ workspace, onComplete, compact = false }: { works
     <form onSubmit={submit} className={`bg-white/90 ${compact ? "rounded-xl border border-violet-100 p-3" : "block-shadow border border-violet-100 p-4"}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
-          <p className="text-lg font-black text-violet-950">{new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(new Date())}</p>
         </div>
         <FileText className="h-5 w-5 text-violet-300" />
       </div>
