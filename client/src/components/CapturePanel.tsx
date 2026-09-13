@@ -62,6 +62,7 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
   const [syncingCaptureId, setSyncingCaptureId] = useState<string | null>(null);
   const [dailyRecordId, setDailyRecordId] = useState<number | null>(null);
   const [todayKey, setTodayKey] = useState(() => (recordDate ?? new Date()).toDateString());
+  const hydratedDailyRecordKey = useRef<string | null>(null);
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
   const fileInput = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
@@ -94,14 +95,22 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
   useEffect(() => { if (recordDate) setTodayKey(recordDate.toDateString()); }, [recordDate]);
   useEffect(() => {
     if (mode !== "daily") return;
+    if (todayJournal.isLoading) return;
     const existing = todayJournal.data?.find(record => record.sourceType === "journal");
+    const recordKey = `${todayKey}:${existing?.id ?? "none"}`;
+    if (hydratedDailyRecordKey.current === recordKey) return;
+    hydratedDailyRecordKey.current = recordKey;
     setDailyRecordId(existing?.id ?? null);
     if (existing) {
       const parts = splitDailyContent(existing.content);
       setIssueContent(parts.issue);
       setDeadlineContent(parts.deadline);
     }
-  }, [mode, todayJournal.data, todayKey]);
+    else {
+      setIssueContent("");
+      setDeadlineContent("");
+    }
+  }, [mode, todayJournal.data, todayJournal.isLoading, todayKey]);
   const content = [issueContent.trim(), deadlineContent.trim() ? `[오늘 마감]\n${deadlineContent.trim()}` : ""].filter(Boolean).join("\n\n");
   const hasDraft = Boolean(content || tags.length || projectId || taskId);
   const refreshPendingCaptures = useCallback(async () => {
