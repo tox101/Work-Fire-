@@ -136,6 +136,7 @@ export async function getRecordSearch(userId: number, input: RecordSearchInput) 
   if (!db) throw new Error("Database connection is unavailable");
 
   const query = input.query?.trim();
+  const recordDate = sql<Date>`COALESCE(${records.recordDate}, ${records.createdAt})`;
   const conditions = [eq(records.userId, userId)];
   if (query) {
     const searchPattern = `%${query}%`;
@@ -147,8 +148,8 @@ export async function getRecordSearch(userId: number, input: RecordSearchInput) 
       const year = monthMatch[1] ? Number(monthMatch[1]) : new Date().getFullYear();
       const month = Number(monthMatch[2]);
       if (month >= 1 && month <= 12) {
-        conditions.push(gte(records.createdAt, new Date(year, month - 1, 1)));
-        conditions.push(lt(records.createdAt, new Date(year, month, 1)));
+        conditions.push(gte(recordDate, new Date(year, month - 1, 1)));
+        conditions.push(lt(recordDate, new Date(year, month, 1)));
       } else {
         const textMatches = [like(records.content, searchPattern), like(projects.title, searchPattern), like(stages.title, searchPattern), like(tasks.title, searchPattern)];
         if (matchingTagIds.length) textMatches.push(inArray(records.id, matchingTagIds));
@@ -163,8 +164,8 @@ export async function getRecordSearch(userId: number, input: RecordSearchInput) 
   if (input.projectId) conditions.push(or(eq(records.projectId, input.projectId), eq(tasks.projectId, input.projectId))!);
   if (input.taskId) conditions.push(eq(records.taskId, input.taskId));
   if (input.sourceType) conditions.push(eq(records.sourceType, input.sourceType));
-  if (input.start) conditions.push(gte(records.createdAt, input.start));
-  if (input.end) conditions.push(lt(records.createdAt, input.end));
+  if (input.start) conditions.push(gte(recordDate, input.start));
+  if (input.end) conditions.push(lt(recordDate, input.end));
   if (input.tag) {
     const taggedRows = await db.select({ recordId: recordTags.recordId }).from(recordTags)
       .where(and(eq(recordTags.userId, userId), eq(recordTags.tag, input.tag)));
@@ -173,8 +174,8 @@ export async function getRecordSearch(userId: number, input: RecordSearchInput) 
     conditions.push(inArray(records.id, taggedRecordIds));
   }
 
-  const order = input.sort === "oldest" ? [asc(records.createdAt)] : input.sort === "pinned" ? [desc(records.isPinned), desc(records.createdAt)] : [desc(records.createdAt)];
-  const rows = await db.select({ id: records.id, content: records.content, sourceType: records.sourceType, isPinned: records.isPinned, createdAt: records.createdAt, projectId: records.projectId, projectTitle: projects.title, taskId: records.taskId, taskTitle: tasks.title, stageTitle: stages.title }).from(records)
+  const order = input.sort === "oldest" ? [asc(recordDate)] : input.sort === "pinned" ? [desc(records.isPinned), desc(recordDate)] : [desc(recordDate)];
+  const rows = await db.select({ id: records.id, content: records.content, sourceType: records.sourceType, isPinned: records.isPinned, createdAt: recordDate, projectId: records.projectId, projectTitle: projects.title, taskId: records.taskId, taskTitle: tasks.title, stageTitle: stages.title }).from(records)
     .leftJoin(projects, and(eq(records.projectId, projects.id), eq(projects.userId, userId)))
     .leftJoin(tasks, and(eq(records.taskId, tasks.id), eq(tasks.userId, userId)))
     .leftJoin(stages, and(eq(records.stageId, stages.id), eq(stages.userId, userId)))
@@ -322,7 +323,8 @@ export async function getRecordDetail(userId: number, recordId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database connection is unavailable");
 
-  const [record] = await db.select({ id: records.id, content: records.content, sourceType: records.sourceType, recordKind: records.recordKind, isPinned: records.isPinned, createdAt: records.createdAt, updatedAt: records.updatedAt, projectTitle: projects.title, stageTitle: stages.title, taskTitle: tasks.title }).from(records)
+  const recordDate = sql<Date>`COALESCE(${records.recordDate}, ${records.createdAt})`;
+  const [record] = await db.select({ id: records.id, content: records.content, sourceType: records.sourceType, recordKind: records.recordKind, isPinned: records.isPinned, createdAt: recordDate, updatedAt: records.updatedAt, projectTitle: projects.title, stageTitle: stages.title, taskTitle: tasks.title }).from(records)
     .leftJoin(projects, and(eq(records.projectId, projects.id), eq(projects.userId, userId)))
     .leftJoin(tasks, and(eq(records.taskId, tasks.id), eq(tasks.userId, userId)))
     .leftJoin(stages, and(eq(records.stageId, stages.id), eq(stages.userId, userId)))
