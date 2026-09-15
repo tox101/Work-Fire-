@@ -166,7 +166,8 @@ export function CapturePanel({ workspace, onComplete, compact = false, mode = "c
     if (!issueContent.trim() && !deadlineContent.trim()) return;
     try {
       if (mode === "daily" && dailyRecordId) {
-        await updateDailyRecord.mutateAsync({ recordId: dailyRecordId, content: content.trim() });
+        const selectedDate = recordDate ?? new Date();
+        await updateDailyRecord.mutateAsync({ recordId: dailyRecordId, content: content.trim(), recordDate: `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, "0")}-${String(selectedDate.getDate()).padStart(2, "0")}` });
         await Promise.all([utils.workspace.recordSearch.invalidate(), utils.workspace.overview.invalidate()]);
         toast.success("오늘기록을 저장했습니다.");
         setIssueContent(""); setDeadlineContent(""); setTags([]); setFiles([]);
