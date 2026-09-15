@@ -55,6 +55,10 @@ function formatShortDate(value: Date | string | null) {
   return SHORT_DATE_FORMATTER.format(new Date(value));
 }
 
+function isSameCalendarDay(left: Date, right: Date) {
+  return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
+}
+
 const KOREA_HOLIDAYS_2026 = new Set(["2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-01", "2026-03-02", "2026-05-05", "2026-05-24", "2026-05-25", "2026-06-03", "2026-06-06", "2026-07-17", "2026-08-15", "2026-08-17", "2026-09-24", "2026-09-25", "2026-09-26", "2026-10-03", "2026-10-05", "2026-10-09", "2026-12-25"]);
 
 function isRestDay(value: Date | string | null) {
@@ -96,13 +100,14 @@ export default function Today() {
 
   const scheduleWindow = useMemo(() => {
     const start = new Date(day);
+    if (viewMode === "week") start.setDate(start.getDate() - 1);
     const end = new Date(day);
     end.setDate(end.getDate() + (viewMode === "week" ? 7 : 1));
     return { start, end };
   }, [day, viewMode]);
-  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => {
+  const weekDays = useMemo(() => Array.from({ length: 8 }, (_, index) => {
     const value = new Date(day);
-    value.setDate(value.getDate() + index);
+    value.setDate(value.getDate() + index - 1);
     return value;
   }), [day]);
   const overview = trpc.workspace.overview.useQuery(scheduleWindow);
@@ -245,7 +250,7 @@ export default function Today() {
       </div>
 
       <div className="mb-2 flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-1 shadow-sm ring-1 ring-slate-200/70">
-        <p className="text-sm font-extrabold text-slate-800">{viewMode === "week" ? "7일 일정" : "오늘"} {schedules.length}개 · 완료 {completedCount}개 · 남음 {pendingCount}개</p>
+        <p className="text-sm font-extrabold text-slate-800">{viewMode === "week" ? "어제 포함 8일 일정" : "오늘"} {schedules.length}개 · 완료 {completedCount}개 · 남음 {pendingCount}개</p>
         <button type="button" onClick={() => openNewSchedule()} className="pressable inline-flex h-9 shrink-0 touch-manipulation items-center gap-1 rounded-md bg-emerald-700 px-2.5 text-xs font-black text-white hover:bg-emerald-800"><Plus className="h-3.5 w-3.5" /> 일정 추가</button>
       </div>
 
@@ -297,7 +302,7 @@ export default function Today() {
           ]);
           setOpenRecordMode(mode);
         }} aria-expanded={openRecordMode === mode} className="h-11 rounded-lg bg-white text-sm font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
-          {mode === "daily" ? <><SquarePen className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "오늘기록 닫기" : "오늘기록"}</> : <><Plus className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "아이디어 닫기" : "아이디어"}</>}
+            {mode === "daily" ? <><SquarePen className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "일일기록 닫기" : (isSameCalendarDay(day, new Date()) ? "오늘기록" : "일일기록")}</> : <><Plus className="mr-1 inline h-4 w-4" />{openRecordMode === mode ? "아이디어 닫기" : "아이디어"}</>}
         </button>)}
       </div>}
 
