@@ -129,6 +129,7 @@ export const records = mysqlTable(
       .notNull(),
     recordKind: mysqlEnum("recordKind", ["captured", "linked", "classified"]).default("captured").notNull(),
     isPinned: boolean("isPinned").default(false).notNull(),
+    recordDate: timestamp("recordDate"),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
