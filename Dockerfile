@@ -21,4 +21,4 @@ ENV PORT=3000
 EXPOSE 3000
 
 # 실행 명령어
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "node tools/apply-record-date.mjs && node dist/index.js"]
