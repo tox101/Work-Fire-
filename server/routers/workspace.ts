@@ -480,7 +480,11 @@ export const workspaceRouter = router({
       const start = input.dailyDate ? new Date(`${input.dailyDate}T00:00:00`) : new Date();
       if (!input.dailyDate) start.setHours(0, 0, 0, 0);
       const end = new Date(start); end.setDate(end.getDate() + 1);
-      const [sameDayJournal] = await db.select().from(records).where(and(eq(records.userId, ctx.user.id), eq(records.sourceType, "journal"), gte(records.createdAt, start), lt(records.createdAt, end))).orderBy(desc(records.createdAt)).limit(1);
+      const journalRows = await db.select().from(records).where(and(eq(records.userId, ctx.user.id), eq(records.sourceType, "journal"))).orderBy(desc(records.createdAt)).limit(100);
+      const sameDayJournal = journalRows.find(row => {
+        const value = row.recordDate ?? row.createdAt;
+        return value >= start && value < end;
+      });
       if (sameDayJournal) input = { ...input, appendToRecordId: sameDayJournal.id };
     }
     if (input.appendToRecordId) {
@@ -500,7 +504,7 @@ export const workspaceRouter = router({
     const { tags: _tags, dailyDate: _dailyDate, appendToRecordId: _appendToRecordId, ...recordInput } = input;
     try {
       return await inTransaction(db, async transaction => {
-        const [created] = await transaction.insert(records).values({ ...recordInput, userId: ctx.user.id, sourceType: input.sourceType ?? "capture", projectId: input.projectId ?? null, stageId: input.stageId ?? null, taskId: input.taskId ?? null, scheduleId: input.scheduleId ?? null, recordKind: linked ? "linked" : "captured" }).$returningId();
+        const [created] = await transaction.insert(records).values({ ...recordInput, userId: ctx.user.id, sourceType: input.sourceType ?? "capture", projectId: input.projectId ?? null, stageId: input.stageId ?? null, taskId: input.taskId ?? null, scheduleId: input.scheduleId ?? null, recordDate: input.dailyDate ? new Date(`${input.dailyDate}T00:00:00`) : null, recordKind: linked ? "linked" : "captured" }).$returningId();
         if (tags.length) await transaction.insert(recordTags).values(tags.map(tag => ({ userId: ctx.user.id, recordId: created.id, tag })));
         const [record] = await transaction.select().from(records).where(and(eq(records.id, created.id), eq(records.userId, ctx.user.id))).limit(1);
         await addHistoryWithDb(transaction, { userId: ctx.user.id, entityType: "Record", entityId: created.id, taskId: input.taskId, eventType: linked ? "linked" : "created", afterData: { sourceType: input.sourceType ?? "capture", taskId: input.taskId ?? null, tags } });
@@ -515,12 +519,12 @@ export const workspaceRouter = router({
     }
   }),
 
-  updateDailyRecord: protectedProcedure.input(z.object({ recordId: z.number().int().positive(), content: z.string().trim().min(1).max(12000) })).mutation(async ({ ctx, input }) => {
+  updateDailyRecord: protectedProcedure.input(z.object({ recordId: z.number().int().positive(), content: z.string().trim().min(1).max(12000), recordDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional() })).mutation(async ({ ctx, input }) => {
     const db = await databaseOrThrow();
     const [existing] = await db.select().from(records).where(and(eq(records.id, input.recordId), eq(records.userId, ctx.user.id))).limit(1);
     await assertOwned(existing, ctx.user.id, "오늘기록");
     if (existing.sourceType !== "journal") throw new TRPCError({ code: "BAD_REQUEST", message: "오늘기록만 수정할 수 있습니다." });
-    await db.update(records).set({ content: input.content }).where(and(eq(records.id, existing.id), eq(records.userId, ctx.user.id)));
+    await db.update(records).set({ content: input.content, recordDate: input.recordDate ? new Date(`${input.recordDate}T00:00:00`) : existing.recordDate }).where(and(eq(records.id, existing.id), eq(records.userId, ctx.user.id)));
     const [updated] = await db.select().from(records).where(and(eq(records.id, existing.id), eq(records.userId, ctx.user.id))).limit(1);
     return updated;
   }),
